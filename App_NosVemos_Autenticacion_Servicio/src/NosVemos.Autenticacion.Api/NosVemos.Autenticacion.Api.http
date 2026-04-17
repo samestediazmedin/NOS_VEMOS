@@ -1,0 +1,6 @@
+@NosVemos.Autenticacion.Api_HostAddress = http://localhost:5036
+
+GET {{NosVemos.Autenticacion.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

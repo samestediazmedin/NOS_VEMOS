@@ -5,3 +5,4 @@
 - `03-arquitectura-microservicios.md`
 - `04-plan-implementacion.md`
 - `05-analisis-inicial-proyecto.md`
+- `06-catalogo-microservicios-y-funcionalidades.md`

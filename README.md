@@ -35,24 +35,52 @@ Cada microservicio contiene:
 1. Copiar variables de entorno:
 
 ```bash
-cp App_NosVemos_Infraestructura/.env.example .env
+cp App_NosVemos_Infraestructura/.env.example App_NosVemos_Infraestructura/.env
 ```
 
 2. Iniciar servicios base:
 
 ```bash
-docker compose -f App_NosVemos_Infraestructura/docker-compose.yml up -d
+docker compose --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml up -d
+```
+
+Para incluir SQL Server en contenedor:
+
+```bash
+docker compose --profile sqlserver --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml up -d
 ```
 
 3. Verificar estado:
 
 ```bash
-docker compose -f App_NosVemos_Infraestructura/docker-compose.yml ps
+docker compose --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml ps
 ```
 
 ## Endpoints locales
 
 - SQL Server: `localhost,1433`
-- RabbitMQ UI: `http://localhost:15672`
+- RabbitMQ UI: `http://localhost:15673`
 - Seq: `http://localhost:5341`
 - Jaeger UI: `http://localhost:16686`
+
+## Ejecutar microservicios base
+
+```bash
+dotnet run --project App_NosVemos_Autenticacion_Servicio/src/NosVemos.Autenticacion.Api
+dotnet run --project App_NosVemos_Usuarios_Servicio/src/NosVemos.Usuarios.Api
+dotnet run --project App_NosVemos_NucleoNegocio_Servicio/src/NosVemos.NucleoNegocio.Api
+dotnet run --project App_NosVemos_Orquestador_IA/src/NosVemos.OrquestadorIA.Api
+dotnet run --project App_NosVemos_Pasarela/src/NosVemos.Pasarela.Api
+```
+
+Puertos por defecto:
+
+- Pasarela: `http://localhost:7000`
+- Autenticacion: `http://localhost:7001`
+- Usuarios: `http://localhost:7002`
+- NucleoNegocio: `http://localhost:7003`
+- Orquestador IA: `http://localhost:7004`
+
+Camara IA de prueba (frontend simple): `App_NosVemos_Movil/src/camara-ia.html`
+
+Nota: los servicios API arrancan en modo `UseInMemoryDatabase=true` para funcionar incluso sin SQL Server. Cuando SQL Server este disponible, cambia ese valor a `false` en los `appsettings.json` de cada servicio.

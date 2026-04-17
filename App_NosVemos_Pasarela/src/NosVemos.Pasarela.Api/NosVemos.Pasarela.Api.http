@@ -1,0 +1,6 @@
+@NosVemos.Pasarela.Api_HostAddress = http://localhost:5099
+
+GET {{NosVemos.Pasarela.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
