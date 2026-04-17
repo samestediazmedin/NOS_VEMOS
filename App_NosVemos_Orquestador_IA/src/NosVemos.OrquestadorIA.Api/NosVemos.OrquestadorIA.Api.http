@@ -1,0 +1,6 @@
+@NosVemos.OrquestadorIA.Api_HostAddress = http://localhost:5145
+
+GET {{NosVemos.OrquestadorIA.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

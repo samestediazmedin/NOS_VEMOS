@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NosVemos.OrquestadorIA.Aplicacion\NosVemos.OrquestadorIA.Aplicacion.csproj" />
+    <ProjectReference Include="..\NosVemos.OrquestadorIA.Dominio\NosVemos.OrquestadorIA.Dominio.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
