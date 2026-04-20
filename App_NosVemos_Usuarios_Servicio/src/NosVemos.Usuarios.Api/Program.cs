@@ -1,4 +1,7 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 var servicePort = builder.Configuration.GetValue<int?>("ServicePort") ?? 7002;
@@ -20,6 +23,29 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+var jwtKey = builder.Configuration["Jwt:SecretKey"]
+    ?? throw new InvalidOperationException("Missing Jwt:SecretKey configuration.");
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = "NosVemos.Auth",
+            ValidAudience = "NosVemos.Client",
+            IssuerSigningKey = signingKey,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -29,10 +55,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<UsuariosDbContext>();
-    db.Database.EnsureCreated();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("UsuariosDbInit");
+    EnsureDatabaseReady(db, useInMemory, logger);
     if (!db.Usuarios.Any())
     {
         db.Usuarios.AddRange(
@@ -45,7 +75,9 @@ using (var scope = app.Services.CreateScope())
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "usuarios" }));
 
-app.MapGet("/api/v1/usuarios", async (UsuariosDbContext db) =>
+var usuarios = app.MapGroup("/api/v1/usuarios").RequireAuthorization();
+
+usuarios.MapGet("", async (UsuariosDbContext db) =>
 {
     var users = await db.Usuarios
         .Select(x => new UsuarioResponse(x.Id, x.Nombre, x.Email, x.Activo))
@@ -53,7 +85,7 @@ app.MapGet("/api/v1/usuarios", async (UsuariosDbContext db) =>
     return Results.Ok(users);
 });
 
-app.MapGet("/api/v1/usuarios/{id:guid}", async (Guid id, UsuariosDbContext db) =>
+usuarios.MapGet("/{id:guid}", async (Guid id, UsuariosDbContext db) =>
 {
     var user = await db.Usuarios
         .Where(x => x.Id == id)
@@ -62,7 +94,7 @@ app.MapGet("/api/v1/usuarios/{id:guid}", async (Guid id, UsuariosDbContext db) =
     return user is null ? Results.NotFound() : Results.Ok(user);
 });
 
-app.MapPost("/api/v1/usuarios", async (CrearUsuarioRequest request, UsuariosDbContext db) =>
+usuarios.MapPost("", async (CrearUsuarioRequest request, UsuariosDbContext db) =>
 {
     var entity = new Usuario
     {
@@ -80,6 +112,25 @@ app.MapPost("/api/v1/usuarios", async (CrearUsuarioRequest request, UsuariosDbCo
 
 app.Run();
 
+static void EnsureDatabaseReady(UsuariosDbContext db, bool useInMemory, ILogger logger)
+{
+    if (useInMemory)
+    {
+        db.Database.EnsureCreated();
+        return;
+    }
+
+    try
+    {
+        db.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "No se pudieron aplicar migraciones; se usa EnsureCreated como fallback.");
+        db.Database.EnsureCreated();
+    }
+}
+
 internal record CrearUsuarioRequest(string Nombre, string Email);
 
 internal record UsuarioResponse(Guid Id, string Nombre, string Email, bool Activo);
@@ -87,6 +138,16 @@ internal record UsuarioResponse(Guid Id, string Nombre, string Email, bool Activ
 internal sealed class UsuariosDbContext(DbContextOptions<UsuariosDbContext> options) : DbContext(options)
 {
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Usuario>(entity =>
+        {
+            entity.HasIndex(x => x.Email).IsUnique();
+            entity.Property(x => x.Nombre).HasMaxLength(150);
+            entity.Property(x => x.Email).HasMaxLength(256);
+        });
+    }
 }
 
 internal sealed class Usuario
@@ -96,3 +157,5 @@ internal sealed class Usuario
     public string Email { get; set; } = string.Empty;
     public bool Activo { get; set; }
 }
+
+public partial class Program;

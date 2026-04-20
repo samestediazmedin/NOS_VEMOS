@@ -1,5 +1,8 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using Microsoft.EntityFrameworkCore;
+using NosVemos.OrquestadorIA.Api.Contracts;
+using NosVemos.OrquestadorIA.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 var servicePort = builder.Configuration.GetValue<int?>("ServicePort") ?? 7004;
@@ -8,6 +11,31 @@ builder.WebHost.UseUrls($"http://0.0.0.0:{servicePort}");
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<ImageAnalysisService>();
+var useInMemory = builder.Configuration.GetValue<bool?>("UseInMemoryDatabase") ?? false;
+builder.Services.AddDbContext<AnalisisDbContext>(options =>
+{
+    if (useInMemory)
+    {
+        options.UseInMemoryDatabase("IADB");
+    }
+    else
+    {
+        options.UseSqlServer(builder.Configuration.GetConnectionString("SqlServer"));
+    }
+});
+var rabbitSettings = builder.Configuration.GetSection("RabbitMq").Get<RabbitMqSettings>() ?? new RabbitMqSettings();
+var enableEvents = builder.Configuration.GetValue<bool?>("Messaging:EnableDomainEvents") ?? true;
+if (enableEvents)
+{
+    builder.Services.AddSingleton<IEventPublisher>(sp =>
+        new RabbitMqEventPublisher(rabbitSettings, sp.GetRequiredService<ILogger<RabbitMqEventPublisher>>()));
+}
+else
+{
+    builder.Services.AddSingleton<IEventPublisher, NoOpEventPublisher>();
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("open", policy =>
@@ -17,7 +45,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
-var analysisStore = new List<AnalisisCamara>();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AnalisisDbContext>();
+    db.Database.EnsureCreated();
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -29,15 +62,22 @@ app.UseCors("open");
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "orquestador-ia" }));
 
-app.MapGet("/api/v1/ia/analisis", () => Results.Ok(analysisStore.OrderByDescending(x => x.Fecha)));
-
-app.MapGet("/api/v1/ia/analisis/{id:guid}", (Guid id) =>
+app.MapGet("/api/v1/ia/analisis", async (AnalisisDbContext db) =>
 {
-    var found = analysisStore.FirstOrDefault(x => x.Id == id);
+    var data = await db.Analisis
+        .OrderByDescending(x => x.Fecha)
+        .Select(x => x.ToContract())
+        .ToListAsync();
+    return Results.Ok(data);
+});
+
+app.MapGet("/api/v1/ia/analisis/{id:guid}", async (Guid id, AnalisisDbContext db) =>
+{
+    var found = await db.Analisis.Where(x => x.Id == id).Select(x => x.ToContract()).FirstOrDefaultAsync();
     return found is null ? Results.NotFound() : Results.Ok(found);
 });
 
-app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? contexto) =>
+app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? contexto, IEventPublisher eventPublisher, AnalisisDbContext db, CancellationToken ct) =>
 {
     if (!request.HasFormContentType)
     {
@@ -46,6 +86,10 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
 
     var form = await request.ReadFormAsync();
     var frame = form.Files["frame"];
+    var usuarioEsperado = (form["usuarioEsperado"].ToString() ?? string.Empty).Trim();
+    var usuarioDetectado = (form["usuarioDetectado"].ToString() ?? string.Empty).Trim();
+    _ = double.TryParse(form["confianzaRostro"], out var confianzaRostro);
+    _ = double.TryParse(form["distanciaCm"], out var distanciaCm);
 
     if (frame is null || frame.Length == 0)
     {
@@ -65,11 +109,12 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
 
     using var img = image;
 
-    var (brillo, contraste) = Analyze(img);
-    var nivelRiesgo = GetRiskLevel(brillo, contraste);
-    var recomendacion = GetRecommendation(nivelRiesgo, contexto);
+    var analysisService = app.Services.GetRequiredService<ImageAnalysisService>();
+    var (brillo, contraste) = analysisService.Analyze(img);
+    var nivelRiesgo = analysisService.GetRiskLevel(brillo, contraste);
+    var recomendacion = analysisService.GetRecommendation(nivelRiesgo, contexto);
 
-    var response = new AnalisisCamara(
+    var response = new AnalisisCamaraEntity(
         Guid.NewGuid(),
         DateTime.UtcNow,
         $"{img.Width}x{img.Height}",
@@ -80,7 +125,30 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
         recomendacion
     );
 
-    analysisStore.Add(response);
+    db.Analisis.Add(response);
+    await db.SaveChangesAsync(ct);
+
+    await eventPublisher.PublishAsync(
+        "ia.camara.analizado",
+        new AnalisisCamaraEvent(response.Id, response.Fecha, response.Contexto, response.NivelRiesgo, response.BrilloPromedio, response.Contraste),
+        ct);
+
+    var hayRostroReconocido = !string.IsNullOrWhiteSpace(usuarioDetectado);
+    if (hayRostroReconocido)
+    {
+        await eventPublisher.PublishAsync(
+            "ia.rostro.reconocido",
+            new RostroReconocidoEvent(response.Id, response.Fecha, usuarioEsperado, usuarioDetectado, confianzaRostro),
+            ct);
+    }
+
+    if (distanciaCm > 0)
+    {
+        await eventPublisher.PublishAsync(
+            "sensor.proximidad.detectada",
+            new ProximidadDetectadaEvent(response.Id, response.Fecha, distanciaCm, distanciaCm < 55),
+            ct);
+    }
 
     var payload = new
     {
@@ -97,6 +165,17 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
         {
             nivelRiesgo = response.NivelRiesgo,
             recomendacion = response.Recomendacion
+        },
+        biometria = new
+        {
+            usuarioEsperado,
+            usuarioDetectado,
+            confianzaRostro = Math.Round(confianzaRostro, 2)
+        },
+        sensor = new
+        {
+            distanciaCm = Math.Round(distanciaCm, 2),
+            alertaProximidad = distanciaCm > 0 && distanciaCm < 55
         }
     };
 
@@ -105,65 +184,3 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
 .DisableAntiforgery();
 
 app.Run();
-
-static (double Brightness, double Contrast) Analyze(Image<Rgba32> image)
-{
-    var values = new List<double>(image.Width * image.Height);
-
-    image.ProcessPixelRows(accessor =>
-    {
-        for (var y = 0; y < accessor.Height; y++)
-        {
-            var row = accessor.GetRowSpan(y);
-            for (var x = 0; x < row.Length; x++)
-            {
-                var p = row[x];
-                var luminance = 0.2126 * p.R + 0.7152 * p.G + 0.0722 * p.B;
-                values.Add(luminance);
-            }
-        }
-    });
-
-    var mean = values.Average();
-    var variance = values.Sum(v => Math.Pow(v - mean, 2)) / values.Count;
-    var stdev = Math.Sqrt(variance);
-    return (mean, stdev);
-}
-
-static string GetRiskLevel(double brightness, double contrast)
-{
-    if (brightness < 55 || contrast < 28)
-    {
-        return "Alto";
-    }
-
-    if (brightness < 90 || contrast < 40)
-    {
-        return "Medio";
-    }
-
-    return "Bajo";
-}
-
-static string GetRecommendation(string risk, string? context)
-{
-    var area = string.IsNullOrWhiteSpace(context) ? "general" : context;
-
-    return risk switch
-    {
-        "Alto" => $"Se recomienda revision inmediata del caso en modulo {area}.",
-        "Medio" => $"Mantener seguimiento y nueva captura en 24 horas para {area}.",
-        _ => $"Sin alertas criticas en {area}; continuar monitoreo regular."
-    };
-}
-
-internal record AnalisisCamara(
-    Guid Id,
-    DateTime Fecha,
-    string Resolucion,
-    string Contexto,
-    double BrilloPromedio,
-    double Contraste,
-    string NivelRiesgo,
-    string Recomendacion
-);

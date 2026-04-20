@@ -11,5 +11,11 @@ Registra trazabilidad de acciones criticas, cambios y eventos de seguridad.
 
 ## Estado
 
-- Definido a nivel de arquitectura y documentacion.
-- Implementacion API completa pendiente de fase de integracion.
+- Worker de auditoria implementado para consumir eventos de dominio desde RabbitMQ.
+- Registra en logs eventos `expediente.creado`, `expediente.cerrado`, `ia.camara.analizado`, `ia.rostro.reconocido` y `sensor.proximidad.detectada`.
+
+## Ejecucion local
+
+```bash
+dotnet run --project App_NosVemos_Auditoria_Servicio/src/NosVemos.Auditoria.Worker
+```

@@ -46,6 +46,23 @@
       margin-top: 12px;
       flex-wrap: wrap;
     }
+    .meta {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .meta input {
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #0b1220;
+      color: var(--text);
+    }
+    .sensor {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
     button {
       border: 0;
       border-radius: 10px;
@@ -83,6 +100,15 @@
       <button id="capture" class="primary">Capturar y analizar</button>
     </div>
 
+    <div class="meta">
+      <input id="token" placeholder="Bearer token (opcional para gateway)" />
+      <input id="usuarioEsperado" placeholder="Usuario esperado" value="usuario_demo" />
+      <input id="usuarioDetectado" placeholder="Usuario detectado por rostro" value="usuario_demo" />
+      <input id="confianzaRostro" type="number" min="0" max="1" step="0.01" value="0.92" />
+    </div>
+
+    <div id="sensorState" class="sensor">Sensor de proximidad: no inicializado.</div>
+
     <div id="output" class="output">Esperando captura...</div>
   </main>
 
@@ -90,16 +116,45 @@
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const output = document.getElementById("output");
+    const sensorState = document.getElementById("sensorState");
     const startBtn = document.getElementById("start");
     const captureBtn = document.getElementById("capture");
+    const tokenInput = document.getElementById("token");
+    const usuarioEsperadoInput = document.getElementById("usuarioEsperado");
+    const usuarioDetectadoInput = document.getElementById("usuarioDetectado");
+    const confianzaRostroInput = document.getElementById("confianzaRostro");
 
     let stream;
+    let distanciaCm = 0;
+
+    function iniciarSensorProximidad() {
+      if (!("ProximitySensor" in window)) {
+        sensorState.textContent = "Sensor de proximidad no soportado por este navegador/dispositivo.";
+        return;
+      }
+
+      try {
+        const sensor = new ProximitySensor({ frequency: 1 });
+        sensor.addEventListener("reading", () => {
+          distanciaCm = Number(sensor.distance || 0);
+          const alerta = distanciaCm > 0 && distanciaCm < 55;
+          sensorState.textContent = `Sensor de proximidad: ${distanciaCm.toFixed(2)} cm${alerta ? " (alerta)" : ""}`;
+        });
+        sensor.addEventListener("error", (event) => {
+          sensorState.textContent = `Error en sensor: ${event.error?.name || "desconocido"}`;
+        });
+        sensor.start();
+      } catch (error) {
+        sensorState.textContent = `No se pudo iniciar sensor de proximidad: ${error.message}`;
+      }
+    }
 
     startBtn.addEventListener("click", async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
         video.srcObject = stream;
         output.textContent = "Camara iniciada.";
+        iniciarSensorProximidad();
       } catch (error) {
         output.textContent = `No se pudo iniciar camara: ${error.message}`;
       }
@@ -119,10 +174,20 @@
       const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
       const formData = new FormData();
       formData.append("frame", blob, "captura.jpg");
+      formData.append("usuarioEsperado", usuarioEsperadoInput.value || "");
+      formData.append("usuarioDetectado", usuarioDetectadoInput.value || "");
+      formData.append("confianzaRostro", confianzaRostroInput.value || "0");
+      formData.append("distanciaCm", String(distanciaCm || 0));
 
       try {
+        const headers = {};
+        if (tokenInput.value) {
+          headers.Authorization = `Bearer ${tokenInput.value}`;
+        }
+
         const response = await fetch("http://localhost:7000/api/v1/ia/analizar-camara?contexto=camara_movil", {
           method: "POST",
+          headers,
           body: formData
         });
 

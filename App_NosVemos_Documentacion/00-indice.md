@@ -6,3 +6,4 @@
 - `04-plan-implementacion.md`
 - `05-analisis-inicial-proyecto.md`
 - `06-catalogo-microservicios-y-funcionalidades.md`
+- `07-historias-usuario-y-backlog-funcional.md`

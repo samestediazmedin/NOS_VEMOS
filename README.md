@@ -56,6 +56,52 @@ docker compose --profile sqlserver --env-file App_NosVemos_Infraestructura/.env 
 docker compose --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml ps
 ```
 
+4. Configurar secreto JWT para todos los servicios (PowerShell):
+
+```powershell
+$env:Jwt__SecretKey="NOS_VEMOS_DEV_SECRET_KEY_CHANGE_ME"
+```
+
+En cmd.exe:
+
+```bat
+set Jwt__SecretKey=NOS_VEMOS_DEV_SECRET_KEY_CHANGE_ME
+```
+
+5. Ejecutar verificacion de seguridad (build + tests, detecta proyectos bloqueados por politica):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-security.ps1
+```
+
+Si algunos proyectos quedan bloqueados por politica de Windows, intenta primero:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\unblock-test-binaries.ps1
+```
+
+Y luego vuelve a correr:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-security.ps1
+```
+
+## CI
+
+El repositorio incluye pipeline en GitHub Actions: `.github/workflows/ci.yml`.
+
+- Restaura dependencias de `NosVemos.sln`.
+- Compila en modo `Release`.
+- Ejecuta `scripts/verify-security.ps1` para validar build y pruebas de seguridad.
+
+## Smoke test E2E con base de datos
+
+Con infraestructura y microservicios arriba, puedes validar flujo completo (registro, login, usuarios, expediente, IA y auditoria persistida en SQL Server):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-e2e-db.ps1
+```
+
 ## Endpoints locales
 
 - SQL Server: `localhost,1433`
@@ -71,6 +117,7 @@ dotnet run --project App_NosVemos_Usuarios_Servicio/src/NosVemos.Usuarios.Api
 dotnet run --project App_NosVemos_NucleoNegocio_Servicio/src/NosVemos.NucleoNegocio.Api
 dotnet run --project App_NosVemos_Orquestador_IA/src/NosVemos.OrquestadorIA.Api
 dotnet run --project App_NosVemos_Pasarela/src/NosVemos.Pasarela.Api
+dotnet run --project App_NosVemos_Auditoria_Servicio/src/NosVemos.Auditoria.Worker
 ```
 
 Puertos por defecto:
@@ -83,4 +130,6 @@ Puertos por defecto:
 
 Camara IA de prueba (frontend simple): `App_NosVemos_Movil/src/camara-ia.html`
 
-Nota: los servicios API arrancan en modo `UseInMemoryDatabase=true` para funcionar incluso sin SQL Server. Cuando SQL Server este disponible, cambia ese valor a `false` en los `appsettings.json` de cada servicio.
+Nota: `Autenticacion`, `Usuarios`, `NucleoNegocio`, `OrquestadorIA` y `Auditoria` estan configurados para persistencia SQL Server por defecto en desarrollo local. Si necesitas trabajar sin SQL temporalmente, puedes habilitar modo en memoria en cada servicio cambiando `UseInMemoryDatabase=true` donde aplique.
+
+Eventos de dominio: `NucleoNegocio` publica `expediente.creado` y `expediente.cerrado`; `OrquestadorIA` publica `ia.camara.analizado`, `ia.rostro.reconocido` y `sensor.proximidad.detectada` en RabbitMQ (`nosvemos.domain.events`), y `Auditoria.Worker` los consume para trazabilidad.
