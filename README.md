@@ -84,3 +84,44 @@ Puertos por defecto:
 Camara IA de prueba (frontend simple): `App_NosVemos_Movil/src/camara-ia.html`
 
 Nota: los servicios API arrancan en modo `UseInMemoryDatabase=true` para funcionar incluso sin SQL Server. Cuando SQL Server este disponible, cambia ese valor a `false` en los `appsettings.json` de cada servicio.
+
+
+
+## Base de Datos - MiProyecto
+ Requisitos
+SQL Server
+SQL Server Management Studio (SSMS)
+
+
+## Crear la base de datos
+
+Ejecutar el archivo:
+
+01_create_database.sql
+
+Contenido esperado:
+
+CREATE DATABASE ControlAccesoFacial;
+GO
+
+USE ControlAccesoFacial;
+GO
+
+## Crear las tablas
+
+Ejecutar: el scrip.sql 
+
+02_tables.sql
+
+Este archivo contiene:
+
+Tabla Usuarios
+Tabla Rostros
+Tabla Accesos
+
+
+
+##Conexión a la base de datos
+Servidor: localhost
+Base de datos: ControlAccesoFacial
+Usuario: según configuración local
