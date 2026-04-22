@@ -1,5 +1,6 @@
 param(
     [string]$GatewayUrl = "http://localhost:7000",
+    [string]$DirectIaUrl = "",
     [string]$Email = "",
     [string]$Password = "Pass123*"
 )
@@ -65,7 +66,9 @@ function Invoke-Multipart {
     }
 
     $http = [System.Net.Http.HttpClient]::new()
-    $http.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $Token)
+    if (-not [string]::IsNullOrWhiteSpace($Token)) {
+        $http.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $Token)
+    }
     $response = $http.PostAsync($Url, $form).Result
     $body = $response.Content.ReadAsStringAsync().Result
     if (-not $response.IsSuccessStatusCode) {
@@ -75,16 +78,25 @@ function Invoke-Multipart {
     return $body | ConvertFrom-Json
 }
 
-if ([string]::IsNullOrWhiteSpace($Email)) {
-    $Email = "ia-smoke-$(Get-Date -Format 'yyyyMMddHHmmss')@nosvemos.local"
+$token = ""
+$iaBaseUrl = $GatewayUrl
+if (-not [string]::IsNullOrWhiteSpace($DirectIaUrl)) {
+    $iaBaseUrl = $DirectIaUrl.TrimEnd('/')
 }
+else {
+    if ([string]::IsNullOrWhiteSpace($Email)) {
+        $Email = "ia-smoke-$(Get-Date -Format 'yyyyMMddHHmmss')@nosvemos.local"
+    }
 
-Write-Host "==> Registro/Login para pruebas IA" -ForegroundColor Cyan
-$null = Invoke-AuthJson -Method "POST" -Url "$GatewayUrl/api/v1/autenticacion/registro" -Body @{ Email = $Email; Password = $Password } -Headers @{}
-$login = Invoke-AuthJson -Method "POST" -Url "$GatewayUrl/api/v1/autenticacion/login" -Body @{ Email = $Email; Password = $Password } -Headers @{}
+    Write-Host "==> Registro/Login para pruebas IA" -ForegroundColor Cyan
+    $null = Invoke-AuthJson -Method "POST" -Url "$GatewayUrl/api/v1/autenticacion/registro" -Body @{ Email = $Email; Password = $Password } -Headers @{}
+    $login = Invoke-AuthJson -Method "POST" -Url "$GatewayUrl/api/v1/autenticacion/login" -Body @{ Email = $Email; Password = $Password } -Headers @{}
 
-if ([string]::IsNullOrWhiteSpace($login.access_token)) {
-    throw "No se obtuvo token de autenticacion."
+    if ([string]::IsNullOrWhiteSpace($login.access_token)) {
+        throw "No se obtuvo token de autenticacion."
+    }
+
+    $token = $login.access_token
 }
 
 $samePath = Join-Path $env:TEMP "nosvemos-face-same.jpg"
@@ -93,14 +105,14 @@ New-SyntheticFaceImage -Path $samePath -Variant "same"
 New-SyntheticFaceImage -Path $otherPath -Variant "other"
 
 Write-Host "==> Entrenando perfil de rostro" -ForegroundColor Cyan
-$train = Invoke-Multipart -Url "$GatewayUrl/api/v1/ia/rostro/entrenar" -Token $login.access_token -ImagePath $samePath -Fields @{ usuario = "usuario_demo" }
+$train = Invoke-Multipart -Url "$iaBaseUrl/api/v1/ia/rostro/entrenar" -Token $token -ImagePath $samePath -Fields @{ usuario = "usuario_demo" }
 Write-Host "Muestras entrenadas: $($train.muestras)" -ForegroundColor Green
 
 Write-Host "==> Verificando imagen del mismo usuario" -ForegroundColor Cyan
-$sameVerify = Invoke-Multipart -Url "$GatewayUrl/api/v1/ia/rostro/verificar" -Token $login.access_token -ImagePath $samePath -Fields @{ usuarioEsperado = "usuario_demo" }
+$sameVerify = Invoke-Multipart -Url "$iaBaseUrl/api/v1/ia/rostro/verificar" -Token $token -ImagePath $samePath -Fields @{ usuarioEsperado = "usuario_demo" }
 
 Write-Host "==> Verificando imagen de usuario diferente" -ForegroundColor Cyan
-$otherVerify = Invoke-Multipart -Url "$GatewayUrl/api/v1/ia/rostro/verificar" -Token $login.access_token -ImagePath $otherPath -Fields @{ usuarioEsperado = "usuario_demo" }
+$otherVerify = Invoke-Multipart -Url "$iaBaseUrl/api/v1/ia/rostro/verificar" -Token $token -ImagePath $otherPath -Fields @{ usuarioEsperado = "usuario_demo" }
 
 Write-Host "Resultado mismo usuario: confianza=$($sameVerify.confianza) coincide=$($sameVerify.coincide) exacto=$($sameVerify.esExacto)" -ForegroundColor Green
 Write-Host "Resultado usuario distinto: confianza=$($otherVerify.confianza) coincide=$($otherVerify.coincide) exacto=$($otherVerify.esExacto)" -ForegroundColor Yellow
