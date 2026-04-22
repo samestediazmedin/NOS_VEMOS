@@ -8,10 +8,16 @@ var builder = WebApplication.CreateBuilder(args);
 var servicePort = builder.Configuration.GetValue<int?>("ServicePort") ?? 7004;
 builder.WebHost.UseUrls($"http://0.0.0.0:{servicePort}");
 
-builder.Services.AddControllers();
+var openAiSettings = builder.Configuration.GetSection("OpenAI").Get<OpenAiSettings>() ?? new OpenAiSettings();
+openAiSettings.ApiKey = builder.Configuration["OPENAI_API_KEY"] ?? builder.Configuration["OpenAI:ApiKey"];
+openAiSettings.OwnerPassword = builder.Configuration["OPENAI_OWNER_PASSWORD"] ?? builder.Configuration["OpenAI:OwnerPassword"];
+openAiSettings.ActivationPassword = builder.Configuration["OPENAI_ACTIVATION_PASSWORD"] ?? builder.Configuration["OpenAI:ActivationPassword"];
+builder.Services.AddSingleton(openAiSettings);
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<ImageAnalysisService>();
+builder.Services.AddSingleton<FaceRecognitionService>();
 var useInMemory = builder.Configuration.GetValue<bool?>("UseInMemoryDatabase") ?? false;
 builder.Services.AddDbContext<AnalisisDbContext>(options =>
 {
@@ -46,10 +52,44 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("OpenAIConfig");
+var hasApiKey = !string.IsNullOrWhiteSpace(openAiSettings.ApiKey);
+var activationRequired = openAiSettings.RequireActivationPassword;
+var hasOwnerPassword = !string.IsNullOrWhiteSpace(openAiSettings.OwnerPassword);
+var hasActivationPassword = !string.IsNullOrWhiteSpace(openAiSettings.ActivationPassword);
+var passwordValid = !activationRequired || (hasOwnerPassword && hasActivationPassword && openAiSettings.OwnerPassword == openAiSettings.ActivationPassword);
+var openAiActive = openAiSettings.Enabled && hasApiKey && passwordValid;
+
+if (openAiSettings.Enabled && !hasApiKey)
+{
+    startupLogger.LogWarning("OpenAI esta habilitado pero no hay API key. Se usa analisis local heuristico como fallback.");
+}
+
+if (openAiSettings.Enabled && activationRequired && !passwordValid)
+{
+    startupLogger.LogWarning("OpenAI requiere contrasena de activacion valida. Se usa analisis local heuristico como fallback.");
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AnalisisDbContext>();
-    db.Database.EnsureCreated();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("IaDbInit");
+    if (useInMemory)
+    {
+        db.Database.EnsureCreated();
+    }
+    else
+    {
+        try
+        {
+            db.Database.Migrate();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudieron aplicar migraciones IA; se usa EnsureCreated como fallback.");
+            db.Database.EnsureCreated();
+        }
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -60,7 +100,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("open");
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "orquestador-ia" }));
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "ok",
+    service = "orquestador-ia",
+    aiProvider = openAiActive ? "openai" : "local"
+}));
 
 app.MapGet("/api/v1/ia/analisis", async (AnalisisDbContext db) =>
 {
@@ -77,7 +122,7 @@ app.MapGet("/api/v1/ia/analisis/{id:guid}", async (Guid id, AnalisisDbContext db
     return found is null ? Results.NotFound() : Results.Ok(found);
 });
 
-app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? contexto, IEventPublisher eventPublisher, AnalisisDbContext db, CancellationToken ct) =>
+app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? contexto, IEventPublisher eventPublisher, AnalisisDbContext db, ImageAnalysisService analysisService, CancellationToken ct) =>
 {
     if (!request.HasFormContentType)
     {
@@ -109,7 +154,6 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
 
     using var img = image;
 
-    var analysisService = app.Services.GetRequiredService<ImageAnalysisService>();
     var (brillo, contraste) = analysisService.Analyze(img);
     var nivelRiesgo = analysisService.GetRiskLevel(brillo, contraste);
     var recomendacion = analysisService.GetRecommendation(nivelRiesgo, contexto);
@@ -180,6 +224,109 @@ app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? co
     };
 
     return Results.Ok(payload);
+})
+.DisableAntiforgery();
+
+app.MapPost("/api/v1/ia/rostro/entrenar", async (HttpRequest request, FaceRecognitionService faceRecognition) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { message = "Debes enviar multipart/form-data con los campos 'frame' y 'usuario'." });
+    }
+
+    var form = await request.ReadFormAsync();
+    var frame = form.Files["frame"];
+    var usuario = (form["usuario"].ToString() ?? string.Empty).Trim();
+
+    if (string.IsNullOrWhiteSpace(usuario))
+    {
+        return Results.BadRequest(new { message = "El campo 'usuario' es obligatorio." });
+    }
+
+    if (frame is null || frame.Length == 0)
+    {
+        return Results.BadRequest(new { message = "Debes enviar una imagen en el campo 'frame'." });
+    }
+
+    await using var stream = frame.OpenReadStream();
+    Image<Rgba32> image;
+    try
+    {
+        image = await Image.LoadAsync<Rgba32>(stream);
+    }
+    catch
+    {
+        return Results.BadRequest(new { message = "El archivo enviado no es una imagen valida." });
+    }
+
+    using var img = image;
+    var samples = faceRecognition.Train(usuario, img);
+
+    return Results.Ok(new
+    {
+        usuario,
+        muestras = samples,
+        message = "Entrenamiento de rostro registrado."
+    });
+})
+.DisableAntiforgery();
+
+app.MapPost("/api/v1/ia/rostro/verificar", async (HttpRequest request, FaceRecognitionService faceRecognition) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new { message = "Debes enviar multipart/form-data con el campo 'frame'." });
+    }
+
+    var form = await request.ReadFormAsync();
+    var frame = form.Files["frame"];
+    var usuarioEsperado = (form["usuarioEsperado"].ToString() ?? string.Empty).Trim();
+
+    if (frame is null || frame.Length == 0)
+    {
+        return Results.BadRequest(new { message = "Debes enviar una imagen en el campo 'frame'." });
+    }
+
+    await using var stream = frame.OpenReadStream();
+    Image<Rgba32> image;
+    try
+    {
+        image = await Image.LoadAsync<Rgba32>(stream);
+    }
+    catch
+    {
+        return Results.BadRequest(new { message = "El archivo enviado no es una imagen valida." });
+    }
+
+    using var img = image;
+    var (usuarioDetectado, confianza) = faceRecognition.Identify(img);
+    var umbralExactitud = 0.92;
+    var coincide = !string.IsNullOrWhiteSpace(usuarioEsperado)
+        && !string.IsNullOrWhiteSpace(usuarioDetectado)
+        && string.Equals(usuarioEsperado, usuarioDetectado, StringComparison.OrdinalIgnoreCase);
+    var esExacto = coincide && confianza >= umbralExactitud;
+
+    var muestrasTotales = 0;
+    if (!string.IsNullOrWhiteSpace(usuarioEsperado) && esExacto)
+    {
+        muestrasTotales = faceRecognition.Train(usuarioEsperado, img);
+    }
+    else if (!string.IsNullOrWhiteSpace(usuarioEsperado) && faceRecognition.HasProfile(usuarioEsperado))
+    {
+        muestrasTotales = faceRecognition.GetSampleCount(usuarioEsperado);
+    }
+
+    return Results.Ok(new
+    {
+        usuarioEsperado,
+        usuarioDetectado,
+        confianza,
+        umbralExactitud,
+        coincide,
+        esExacto,
+        perfilEntrenado = !string.IsNullOrWhiteSpace(usuarioEsperado) && faceRecognition.HasProfile(usuarioEsperado),
+        muestrasTotales
+    });
 })
 .DisableAntiforgery();
 

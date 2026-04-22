@@ -98,18 +98,27 @@
     <div class="actions">
       <button id="start" class="secondary">Iniciar camara</button>
       <button id="capture" class="primary">Capturar y analizar</button>
+      <button id="trainFace" class="secondary">Entrenar rostro</button>
+      <button id="verifyFace" class="secondary">Detectar y aprender</button>
+      <button id="loadAudit" class="secondary">Ver auditoria</button>
+      <button id="loadAuditById" class="secondary">Ver detalle evento</button>
     </div>
 
     <div class="meta">
-      <input id="token" placeholder="Bearer token (opcional para gateway)" />
+      <input id="token" placeholder="Bearer token (requerido para rutas protegidas en gateway)" />
       <input id="usuarioEsperado" placeholder="Usuario esperado" value="usuario_demo" />
       <input id="usuarioDetectado" placeholder="Usuario detectado por rostro" value="usuario_demo" />
       <input id="confianzaRostro" type="number" min="0" max="1" step="0.01" value="0.92" />
+      <input id="auditRoutingKey" placeholder="Filtro auditoria por routingKey (opcional)" />
+      <input id="auditPage" type="number" min="1" value="1" placeholder="Pagina" />
+      <input id="auditPageSize" type="number" min="1" max="200" value="20" placeholder="Tamano pagina" />
+      <input id="auditEventId" placeholder="Id de evento para detalle (GUID)" />
     </div>
 
     <div id="sensorState" class="sensor">Sensor de proximidad: no inicializado.</div>
 
     <div id="output" class="output">Esperando captura...</div>
+    <div id="auditOutput" class="output">Auditoria: sin datos.</div>
   </main>
 
   <script>
@@ -119,13 +128,46 @@
     const sensorState = document.getElementById("sensorState");
     const startBtn = document.getElementById("start");
     const captureBtn = document.getElementById("capture");
+    const trainFaceBtn = document.getElementById("trainFace");
+    const verifyFaceBtn = document.getElementById("verifyFace");
+    const loadAuditBtn = document.getElementById("loadAudit");
+    const loadAuditByIdBtn = document.getElementById("loadAuditById");
     const tokenInput = document.getElementById("token");
     const usuarioEsperadoInput = document.getElementById("usuarioEsperado");
     const usuarioDetectadoInput = document.getElementById("usuarioDetectado");
     const confianzaRostroInput = document.getElementById("confianzaRostro");
+    const auditRoutingKeyInput = document.getElementById("auditRoutingKey");
+    const auditPageInput = document.getElementById("auditPage");
+    const auditPageSizeInput = document.getElementById("auditPageSize");
+    const auditEventIdInput = document.getElementById("auditEventId");
+    const auditOutput = document.getElementById("auditOutput");
 
     let stream;
     let distanciaCm = 0;
+
+    async function capturarFrameComoFormData() {
+      if (!stream) {
+        throw new Error("Primero debes iniciar la camara.");
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
+      const formData = new FormData();
+      formData.append("frame", blob, "captura.jpg");
+      return formData;
+    }
+
+    function construirHeadersAutorizacion() {
+      const headers = {};
+      if (tokenInput.value) {
+        headers.Authorization = `Bearer ${tokenInput.value}`;
+      }
+      return headers;
+    }
 
     function iniciarSensorProximidad() {
       if (!("ProximitySensor" in window)) {
@@ -161,29 +203,13 @@
     });
 
     captureBtn.addEventListener("click", async () => {
-      if (!stream) {
-        output.textContent = "Primero debes iniciar la camara.";
-        return;
-      }
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
-      const formData = new FormData();
-      formData.append("frame", blob, "captura.jpg");
-      formData.append("usuarioEsperado", usuarioEsperadoInput.value || "");
-      formData.append("usuarioDetectado", usuarioDetectadoInput.value || "");
-      formData.append("confianzaRostro", confianzaRostroInput.value || "0");
-      formData.append("distanciaCm", String(distanciaCm || 0));
-
       try {
-        const headers = {};
-        if (tokenInput.value) {
-          headers.Authorization = `Bearer ${tokenInput.value}`;
-        }
+        const formData = await capturarFrameComoFormData();
+        formData.append("usuarioEsperado", usuarioEsperadoInput.value || "");
+        formData.append("usuarioDetectado", usuarioDetectadoInput.value || "");
+        formData.append("confianzaRostro", confianzaRostroInput.value || "0");
+        formData.append("distanciaCm", String(distanciaCm || 0));
+        const headers = construirHeadersAutorizacion();
 
         const response = await fetch("http://localhost:7000/api/v1/ia/analizar-camara?contexto=camara_movil", {
           method: "POST",
@@ -203,6 +229,117 @@
         output.textContent = JSON.stringify(data, null, 2);
       } catch (error) {
         output.textContent = `Fallo de conexion: ${error.message}`;
+      }
+    });
+
+    trainFaceBtn.addEventListener("click", async () => {
+      const usuario = (usuarioEsperadoInput.value || "").trim();
+      if (!usuario) {
+        output.textContent = "Ingresa un usuario esperado para entrenar el rostro.";
+        return;
+      }
+
+      try {
+        const formData = await capturarFrameComoFormData();
+        formData.append("usuario", usuario);
+        const headers = construirHeadersAutorizacion();
+
+        const response = await fetch("http://localhost:7000/api/v1/ia/rostro/entrenar", {
+          method: "POST",
+          headers,
+          body: formData
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          output.textContent = `Error entrenamiento: ${response.status} - ${err}`;
+          return;
+        }
+
+        const data = await response.json();
+        output.className = "output";
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        output.textContent = `Fallo entrenamiento: ${error.message}`;
+      }
+    });
+
+    verifyFaceBtn.addEventListener("click", async () => {
+      try {
+        const formData = await capturarFrameComoFormData();
+        formData.append("usuarioEsperado", usuarioEsperadoInput.value || "");
+        const headers = construirHeadersAutorizacion();
+
+        const response = await fetch("http://localhost:7000/api/v1/ia/rostro/verificar", {
+          method: "POST",
+          headers,
+          body: formData
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          output.textContent = `Error verificacion: ${response.status} - ${err}`;
+          return;
+        }
+
+        const data = await response.json();
+        output.className = `output ${data.esExacto ? "bajo" : "medio"}`;
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        output.textContent = `Fallo verificacion: ${error.message}`;
+      }
+    });
+
+    loadAuditBtn.addEventListener("click", async () => {
+      try {
+        const headers = construirHeadersAutorizacion();
+
+        const params = new URLSearchParams();
+        const routingKey = (auditRoutingKeyInput.value || "").trim();
+        const page = Number(auditPageInput.value || 1);
+        const pageSize = Number(auditPageSizeInput.value || 20);
+
+        if (routingKey) {
+          params.set("routingKey", routingKey);
+        }
+        params.set("page", String(page > 0 ? page : 1));
+        params.set("pageSize", String(pageSize > 0 ? pageSize : 20));
+
+        const response = await fetch(`http://localhost:7000/api/v1/auditoria/eventos?${params.toString()}`, { headers });
+        if (!response.ok) {
+          const err = await response.text();
+          auditOutput.textContent = `Error auditoria: ${response.status} - ${err}`;
+          return;
+        }
+
+        const data = await response.json();
+        auditOutput.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        auditOutput.textContent = `Fallo auditoria: ${error.message}`;
+      }
+    });
+
+    loadAuditByIdBtn.addEventListener("click", async () => {
+      const eventId = (auditEventIdInput.value || "").trim();
+      if (!eventId) {
+        auditOutput.textContent = "Ingresa un id de evento para consultar detalle.";
+        return;
+      }
+
+      try {
+        const headers = construirHeadersAutorizacion();
+
+        const response = await fetch(`http://localhost:7000/api/v1/auditoria/eventos/${eventId}`, { headers });
+        if (!response.ok) {
+          const err = await response.text();
+          auditOutput.textContent = `Error detalle auditoria: ${response.status} - ${err}`;
+          return;
+        }
+
+        const data = await response.json();
+        auditOutput.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        auditOutput.textContent = `Fallo detalle auditoria: ${error.message}`;
       }
     });
   </script>

@@ -19,3 +19,15 @@ Registra trazabilidad de acciones criticas, cambios y eventos de seguridad.
 ```bash
 dotnet run --project App_NosVemos_Auditoria_Servicio/src/NosVemos.Auditoria.Worker
 ```
+
+## Consulta de eventos
+
+Endpoint disponible:
+
+- `GET /api/v1/auditoria/eventos?routingKey=<key>&from=<utc>&to=<utc>&take=50`
+
+Ejemplo por pasarela:
+
+```bash
+curl -H "Authorization: Bearer <token>" "http://localhost:7000/api/v1/auditoria/eventos?take=20"
+```

@@ -21,12 +21,13 @@ builder.Services.AddDbContext<NucleoDbContext>(options =>
     }
 });
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
     ?? throw new InvalidOperationException("Missing Jwt:SecretKey configuration.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "NosVemos.Auth";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "NosVemos.Client";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
 builder.Services
@@ -39,8 +40,8 @@ builder.Services
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
-            ValidIssuer = "NosVemos.Auth",
-            ValidAudience = "NosVemos.Client",
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             IssuerSigningKey = signingKey,
             ClockSkew = TimeSpan.FromSeconds(30)
         };

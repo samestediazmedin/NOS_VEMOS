@@ -19,28 +19,40 @@ builder.Services.AddDbContext<UsuariosDbContext>(options =>
     }
 });
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
     ?? throw new InvalidOperationException("Missing Jwt:SecretKey configuration.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "NosVemos.Auth";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "NosVemos.Client";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.IncludeErrorDetails = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
-            ValidIssuer = "NosVemos.Auth",
-            ValidAudience = "NosVemos.Client",
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             IssuerSigningKey = signingKey,
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = ctx =>
+            {
+                var logger = ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtAuth");
+                logger.LogError(ctx.Exception, "JWT authentication failed in usuarios service.");
+                return Task.CompletedTask;
+            }
         };
     });
 

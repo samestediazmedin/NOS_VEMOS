@@ -8,7 +8,6 @@ var builder = WebApplication.CreateBuilder(args);
 var servicePort = builder.Configuration.GetValue<int?>("ServicePort") ?? 7001;
 builder.WebHost.UseUrls($"http://0.0.0.0:{servicePort}");
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 var useInMemory = builder.Configuration.GetValue<bool?>("UseInMemoryDatabase") ?? true;
@@ -35,6 +34,8 @@ if (app.Environment.IsDevelopment())
 
 var jwtKey = app.Configuration["Jwt:SecretKey"]
     ?? throw new InvalidOperationException("Missing Jwt:SecretKey configuration.");
+var jwtIssuer = app.Configuration["Jwt:Issuer"] ?? "NosVemos.Auth";
+var jwtAudience = app.Configuration["Jwt:Audience"] ?? "NosVemos.Client";
 
 using (var scope = app.Services.CreateScope())
 {
@@ -105,19 +106,19 @@ app.MapPost("/api/v1/autenticacion/login", async (LoginRequest request, AuthDbCo
         await db.SaveChangesAsync();
     }
 
-    var token = BuildToken(new UserCredential(user.Email, user.Password, user.Role), jwtKey);
+    var token = BuildToken(new UserCredential(user.Email, user.Password, user.Role), jwtKey, jwtIssuer, jwtAudience);
     return Results.Ok(new { access_token = token, token_type = "Bearer", expires_in = 3600, role = user.Role });
 });
 
 app.Run();
 
-static string BuildToken(UserCredential user, string secret)
+static string BuildToken(UserCredential user, string secret, string issuer, string audience)
 {
     var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
     var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
     var token = new JwtSecurityToken(
-        issuer: "NosVemos.Auth",
-        audience: "NosVemos.Client",
+        issuer: issuer,
+        audience: audience,
         claims:
         [
             new Claim(ClaimTypes.Email, user.Email),

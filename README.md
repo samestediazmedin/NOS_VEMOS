@@ -133,3 +133,7 @@ Camara IA de prueba (frontend simple): `App_NosVemos_Movil/src/camara-ia.html`
 Nota: `Autenticacion`, `Usuarios`, `NucleoNegocio`, `OrquestadorIA` y `Auditoria` estan configurados para persistencia SQL Server por defecto en desarrollo local. Si necesitas trabajar sin SQL temporalmente, puedes habilitar modo en memoria en cada servicio cambiando `UseInMemoryDatabase=true` donde aplique.
 
 Eventos de dominio: `NucleoNegocio` publica `expediente.creado` y `expediente.cerrado`; `OrquestadorIA` publica `ia.camara.analizado`, `ia.rostro.reconocido` y `sensor.proximidad.detectada` en RabbitMQ (`nosvemos.domain.events`), y `Auditoria.Worker` los consume para trazabilidad.
+
+Consulta de auditoria por pasarela:
+
+- `GET http://localhost:7000/api/v1/auditoria/eventos?take=20`
