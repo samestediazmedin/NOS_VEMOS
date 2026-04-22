@@ -50,13 +50,19 @@ Para incluir SQL Server en contenedor:
 docker compose --profile sqlserver --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml up -d
 ```
 
-3. Verificar estado:
+3. Crear bases de datos de la aplicacion en SQL Server:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-nosvemos-db.ps1
+```
+
+4. Verificar estado:
 
 ```bash
 docker compose --env-file App_NosVemos_Infraestructura/.env -f App_NosVemos_Infraestructura/docker-compose.yml ps
 ```
 
-4. Configurar secreto JWT para todos los servicios (PowerShell):
+5. Configurar secreto JWT para todos los servicios (PowerShell):
 
 ```powershell
 $env:Jwt__SecretKey="NOS_VEMOS_DEV_SECRET_KEY_CHANGE_ME"
@@ -68,7 +74,7 @@ En cmd.exe:
 set Jwt__SecretKey=NOS_VEMOS_DEV_SECRET_KEY_CHANGE_ME
 ```
 
-5. Ejecutar verificacion de seguridad (build + tests, detecta proyectos bloqueados por politica):
+6. Ejecutar verificacion de seguridad (build + tests, detecta proyectos bloqueados por politica):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-security.ps1
@@ -100,6 +106,12 @@ Con infraestructura y microservicios arriba, puedes validar flujo completo (regi
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-e2e-db.ps1
+```
+
+Smoke adicional para reconocimiento facial por pixeles (entrenar/verificar con imagenes de prueba):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-ia-face-recognition.ps1
 ```
 
 ## Endpoints locales

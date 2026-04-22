@@ -7,3 +7,5 @@
 - `05-analisis-inicial-proyecto.md`
 - `06-catalogo-microservicios-y-funcionalidades.md`
 - `07-historias-usuario-y-backlog-funcional.md`
+- `08-bitacora-sesion-2026-04-20.md`
+- `09-metricas-modelo-ml-fbeta.md`

@@ -300,7 +300,7 @@ app.MapPost("/api/v1/ia/rostro/verificar", async (HttpRequest request, FaceRecog
 
     using var img = image;
     var (usuarioDetectado, confianza) = faceRecognition.Identify(img);
-    var umbralExactitud = 0.92;
+    var umbralExactitud = 0.85;
     var coincide = !string.IsNullOrWhiteSpace(usuarioEsperado)
         && !string.IsNullOrWhiteSpace(usuarioDetectado)
         && string.Equals(usuarioEsperado, usuarioDetectado, StringComparison.OrdinalIgnoreCase);
