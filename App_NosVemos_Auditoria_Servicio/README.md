@@ -13,6 +13,17 @@ Registra trazabilidad de acciones criticas, cambios y eventos de seguridad.
 
 - Worker de auditoria implementado para consumir eventos de dominio desde RabbitMQ.
 - Registra en logs eventos `expediente.creado`, `expediente.cerrado`, `ia.camara.analizado`, `ia.rostro.reconocido` y `sensor.proximidad.detectada`.
+- API de consulta implementada para listar eventos filtrados desde `AuditoriaDB`.
+
+## Endpoints
+
+- `GET /health`
+- `GET /api/v1/auditoria/eventos`
+  - Filtros opcionales: `routingKey`, `modulo`, `desde`, `hasta`, `limit` (max 500)
+- `GET /api/v1/auditoria/movimientos`
+- `POST /api/v1/auditoria/movimientos`
+- `GET /api/v1/auditoria/asignaciones`
+- `POST /api/v1/auditoria/asignaciones`
 
 ## Ejecucion local
 

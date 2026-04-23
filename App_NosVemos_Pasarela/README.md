@@ -21,6 +21,7 @@ dotnet run --project App_NosVemos_Pasarela/src/NosVemos.Pasarela.Api
 - `/api/v1/usuarios/*` -> `http://localhost:7002`
 - `/api/v1/expedientes/*` -> `http://localhost:7003`
 - `/api/v1/ia/*` -> `http://localhost:7004`
+- `/api/v1/auditoria/*` -> `http://localhost:7005`
 
 ## Funcionalidades
 
