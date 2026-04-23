@@ -7,7 +7,8 @@ $testProjects = @(
     "App_NosVemos_Autenticacion_Servicio/tests/NosVemos.Autenticacion.Tests/NosVemos.Autenticacion.Tests.csproj",
     "App_NosVemos_Usuarios_Servicio/tests/NosVemos.Usuarios.Tests/NosVemos.Usuarios.Tests.csproj",
     "App_NosVemos_NucleoNegocio_Servicio/tests/NosVemos.NucleoNegocio.Tests/NosVemos.NucleoNegocio.Tests.csproj",
-    "App_NosVemos_Pasarela/tests/NosVemos.Pasarela.Tests/NosVemos.Pasarela.Tests.csproj"
+    "App_NosVemos_Pasarela/tests/NosVemos.Pasarela.Tests/NosVemos.Pasarela.Tests.csproj",
+    "App_NosVemos_Orquestador_IA/tests/NosVemos.OrquestadorIA.Tests/NosVemos.OrquestadorIA.Tests.csproj"
 )
 
 $blockedMarkers = @(

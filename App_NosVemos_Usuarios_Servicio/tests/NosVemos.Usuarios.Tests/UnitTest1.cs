@@ -3,7 +3,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
 namespace NosVemos.Usuarios.Tests;
@@ -16,6 +18,7 @@ public class UsuariosAuthorizationTests : IClassFixture<UsuariosFactory>
     static UsuariosAuthorizationTests()
     {
         Environment.SetEnvironmentVariable("Jwt__SecretKey", TestJwtSecret);
+        Environment.SetEnvironmentVariable("UseInMemoryDatabase", "true");
     }
 
     public UsuariosAuthorizationTests(UsuariosFactory factory)
@@ -55,4 +58,19 @@ public class UsuariosAuthorizationTests : IClassFixture<UsuariosFactory>
     }
 }
 
-public sealed class UsuariosFactory : WebApplicationFactory<Program>;
+public sealed class UsuariosFactory : WebApplicationFactory<Program>
+{
+    private const string FactoryJwtSecret = "nosvemos-test-secret-at-least-32-bytes";
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["UseInMemoryDatabase"] = "true",
+                ["Jwt:SecretKey"] = FactoryJwtSecret
+            });
+        });
+    }
+}

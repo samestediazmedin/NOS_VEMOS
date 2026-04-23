@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nosvemos.local/schemas/arduino-telemetria-v1.schema.json",
+  "title": "Arduino Telemetria v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "deviceId",
+    "sensorType",
+    "value",
+    "unit",
+    "capturedAt",
+    "sequence",
+    "quality",
+    "meta",
+    "checksum"
+  ],
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z0-9._-]+$"
+    },
+    "sensorType": {
+      "type": "string",
+      "enum": [
+        "proximidad",
+        "temperatura",
+        "humedad",
+        "movimiento",
+        "luz",
+        "otro"
+      ]
+    },
+    "value": {
+      "type": "number"
+    },
+    "unit": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "confidence"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "degradado",
+            "inestable",
+            "error"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firmwareVersion",
+        "bridgeVersion",
+        "source"
+      ],
+      "properties": {
+        "firmwareVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "bridgeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "serial",
+            "wifi",
+            "bluetooth"
+          ]
+        }
+      }
+    },
+    "checksum": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{4,8}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sensorType": {
+            "const": "proximidad"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unit": {
+            "const": "cm"
+          },
+          "value": {
+            "minimum": 0,
+            "maximum": 500
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sensorType": {
+            "const": "temperatura"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unit": {
+            "const": "c"
+          },
+          "value": {
+            "minimum": -40,
+            "maximum": 125
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sensorType": {
+            "const": "humedad"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "unit": {
+            "const": "%"
+          },
+          "value": {
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "deviceId": "arduino-001",
+      "sensorType": "proximidad",
+      "value": 42.3,
+      "unit": "cm",
+      "capturedAt": "2026-04-22T20:10:00Z",
+      "sequence": 1287,
+      "quality": {
+        "signal": "ok",
+        "confidence": 0.94
+      },
+      "meta": {
+        "firmwareVersion": "1.0.0",
+        "bridgeVersion": "1.0.0",
+        "source": "serial"
+      },
+      "checksum": "A1F9"
+    }
+  ]
+}

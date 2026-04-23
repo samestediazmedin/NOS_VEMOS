@@ -2,7 +2,9 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace NosVemos.Autenticacion.Tests;
 
@@ -13,6 +15,7 @@ public class AuthEndpointsTests : IClassFixture<AuthFactory>
     static AuthEndpointsTests()
     {
         Environment.SetEnvironmentVariable("Jwt__SecretKey", "nosvemos-test-secret-at-least-32-bytes");
+        Environment.SetEnvironmentVariable("UseInMemoryDatabase", "true");
     }
 
     public AuthEndpointsTests(AuthFactory factory)
@@ -30,7 +33,8 @@ public class AuthEndpointsTests : IClassFixture<AuthFactory>
             Password = "Pass123*"
         });
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.Created, $"Status={(int)response.StatusCode} Body={body}");
     }
 
     [Fact]
@@ -50,7 +54,8 @@ public class AuthEndpointsTests : IClassFixture<AuthFactory>
             Password = "Pass123*"
         });
 
-        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var firstBody = await first.Content.ReadAsStringAsync();
+        Assert.True(first.StatusCode == HttpStatusCode.Created, $"Status={(int)first.StatusCode} Body={firstBody}");
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
@@ -104,4 +109,17 @@ public class AuthEndpointsTests : IClassFixture<AuthFactory>
     internal sealed record LoginResponse(string access_token, string token_type, int expires_in, string role);
 }
 
-public sealed class AuthFactory : WebApplicationFactory<Program>;
+public sealed class AuthFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["UseInMemoryDatabase"] = "true",
+                ["Jwt:SecretKey"] = "nosvemos-test-secret-at-least-32-bytes"
+            });
+        });
+    }
+}
