@@ -13,4 +13,5 @@
 - `11-especificacion-api-ingestion-arduino.md`
 - `12-checklist-firmware-bridge.md`
 - `13-bitacora-2026-04-23.md`
+- `14-especificacion-funcional-camara-biometria.md`
 - `schemas/arduino-telemetria-v1.schema.json`
