@@ -1,11 +1,29 @@
-export type Role = "Admin" | "Operador" | "Auditor";
+export type Role = "Admin";
 
 export type AppModule =
   | "dashboard"
-  | "captura"
+  | "usuarios"
   | "reconocimiento"
   | "historial"
   | "auditoria";
+
+export interface ManagedUser {
+  id: string;
+  nombre: string;
+  email: string;
+  activo: boolean;
+  source: "api" | "local";
+  biometricStatus: "pendiente_biometria" | "biometria_activa";
+  createdAt?: string;
+}
+
+export type FaceAngle = "frontal" | "izquierda" | "derecha";
+
+export interface BiometricCapture {
+  angle: FaceAngle;
+  quality: number;
+  createdAt: string;
+}
 
 export interface RecognitionEvent {
   id: string;

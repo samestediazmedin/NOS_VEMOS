@@ -93,19 +93,22 @@ export function RecognitionPage() {
     <div className="grid split">
       <section className="card">
         <h3>Reconocimiento en vivo</h3>
+        <p className="page-intro">Valida identidad en tiempo real y ejecuta fallback cuando superas intentos fallidos.</p>
         <div className="camera-box">
           <div className={state === "match" ? "frame ok" : state === "no-match" ? "frame bad" : "frame"} />
           <span>{state === "processing" ? "Analizando rostro..." : "Camara activa"}</span>
           <video ref={videoRef} autoPlay playsInline className="camera-video" />
           <canvas ref={canvasRef} hidden />
         </div>
-        <p>{status}</p>
-        <button type="button" className="ghost" onClick={startCamera}>
-          Iniciar camara
-        </button>
-        <button onClick={runRecognition} disabled={state === "processing" || attempts >= 3}>
-          Iniciar reconocimiento
-        </button>
+        <span className="status-pill pill-info">{status}</span>
+        <div className="actions">
+          <button type="button" className="btn-secondary" onClick={startCamera}>
+            Iniciar camara
+          </button>
+          <button className="btn-primary" onClick={runRecognition} disabled={state === "processing" || attempts >= 3}>
+            Iniciar reconocimiento
+          </button>
+        </div>
       </section>
 
       <section className="card">
@@ -123,8 +126,8 @@ export function RecognitionPage() {
           <strong>{attempts}/3</strong>
         </div>
         {state === "match" && <p className="ok">Match valido: activar dispositivo.</p>}
-        {state === "no-match" && <p className="warn">No coincide: reintentar o fallback.</p>}
-        {attempts >= 3 && <p className="bad">Bloqueado: usar PIN/credencial secundaria.</p>}
+        {state === "no-match" && <p className="warn">No coincide: reintentar o aplicar fallback seguro.</p>}
+        {attempts >= 3 && <p className="bad">Bloqueado: usar PIN o credencial secundaria.</p>}
       </section>
     </div>
   );

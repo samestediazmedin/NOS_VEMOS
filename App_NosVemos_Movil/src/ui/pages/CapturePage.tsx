@@ -93,6 +93,7 @@ export function CapturePage() {
     <div className="grid split">
       <section className="card">
         <h3>Enrolamiento biometrico</h3>
+        <p className="page-intro">Guia de captura asistida con tres angulos y validacion de calidad por IA.</p>
         <p>Usuario: USR-0089 - Juan Martinez</p>
         <label className="checkbox">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
@@ -104,16 +105,18 @@ export function CapturePage() {
           <video ref={videoRef} autoPlay playsInline className="camera-video" />
           <canvas ref={canvasRef} hidden />
         </div>
-        <p>{status}</p>
+        <span className="status-pill pill-info">{status}</span>
         <p>
           Paso actual: <strong>{next ? label(next) : "Completado"}</strong>
         </p>
-        <button type="button" onClick={startCamera}>
-          Iniciar camara
-        </button>
-        <button disabled={!consent || !next} onClick={saveCapture}>
-          Capturar foto
-        </button>
+        <div className="actions">
+          <button type="button" className="btn-secondary" onClick={startCamera}>
+            Iniciar camara
+          </button>
+          <button className="btn-primary" disabled={!consent || !next} onClick={saveCapture}>
+            Capturar foto
+          </button>
+        </div>
       </section>
 
       <section className="card">
@@ -125,7 +128,7 @@ export function CapturePage() {
               <span>{label(angle)}</span>
               {capture ? (
                 <span>
-                  {capture.quality}% <button onClick={() => recapture(angle)}>recapturar</button>
+                  {capture.quality}% <button className="btn-inline" onClick={() => recapture(angle)}>Recapturar</button>
                 </span>
               ) : (
                 <span>Pendiente</span>
@@ -133,7 +136,7 @@ export function CapturePage() {
             </div>
           );
         })}
-        {done && <p className="ok">Enrolamiento listo para aprobacion del admin.</p>}
+        {done && <p className="ok">Enrolamiento listo para aprobacion del administrador.</p>}
       </section>
     </div>
   );

@@ -3,6 +3,8 @@ bin/
 obj/
 dist/
 out/
+node_modules/
+**/node_modules/
 
 # IDE
 .vs/

@@ -1,7 +1,18 @@
-import type { DashboardMetrics, EnrollmentRecord, RecognitionEvent } from "../types";
+import type { BiometricCapture, DashboardMetrics, EnrollmentRecord, ManagedUser, RecognitionEvent } from "../types";
 
 const BASE_URL = "http://localhost:7000";
 const LOCAL_KEY = "nosvemos.local.recognition-events";
+const LOCAL_USERS_KEY = "nosvemos.local.managed-users";
+const LOCAL_BIOMETRIC_KEY = "nosvemos.local.biometric-enrollments";
+
+interface LocalBiometricEnrollment {
+  userEmail: string;
+  userName: string;
+  captures: BiometricCapture[];
+  estado: ManagedUser["biometricStatus"];
+  createdAt: string;
+  approvedBy: string;
+}
 
 async function safeFetch<T>(path: string, token?: string): Promise<T | null> {
   try {
@@ -39,6 +50,26 @@ async function safePostForm<T>(path: string, formData: FormData, token?: string)
   }
 }
 
+async function safePostJson<T>(path: string, body: object, token?: string): Promise<T | null> {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 function loadLocalEvents(): RecognitionEvent[] {
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
@@ -51,6 +82,34 @@ function loadLocalEvents(): RecognitionEvent[] {
 
 function saveLocalEvents(events: RecognitionEvent[]): void {
   localStorage.setItem(LOCAL_KEY, JSON.stringify(events.slice(0, 200)));
+}
+
+function loadLocalUsers(): ManagedUser[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_USERS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ManagedUser[];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalUsers(users: ManagedUser[]): void {
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users.slice(0, 200)));
+}
+
+function loadLocalBiometricEnrollments(): LocalBiometricEnrollment[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_BIOMETRIC_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as LocalBiometricEnrollment[];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalBiometricEnrollments(entries: LocalBiometricEnrollment[]): void {
+  localStorage.setItem(LOCAL_BIOMETRIC_KEY, JSON.stringify(entries.slice(0, 200)));
 }
 
 function parseAuditPayload(payload: string): { userId: string | null; userName: string | null; score: number; reasonCode: string } {
@@ -127,6 +186,27 @@ const mockEnrollments: EnrollmentRecord[] = [
     rightScore: 57,
     approvedBy: "Admin Principal",
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 40).toISOString()
+  }
+];
+
+const mockManagedUsers: ManagedUser[] = [
+  {
+    id: "usr-admin-1",
+    nombre: "Administrador General",
+    email: "admin@nosvemos.local",
+    activo: true,
+    source: "local",
+    biometricStatus: "biometria_activa",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString()
+  },
+  {
+    id: "usr-demo-1",
+    nombre: "Juan Martinez",
+    email: "juan@nosvemos.local",
+    activo: true,
+    source: "local",
+    biometricStatus: "biometria_activa",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString()
   }
 ];
 
@@ -216,4 +296,82 @@ export function appendLocalRecognitionEvent(event: RecognitionEvent): void {
   const events = loadLocalEvents();
   events.unshift(event);
   saveLocalEvents(events);
+}
+
+export async function getManagedUsers(token?: string): Promise<ManagedUser[]> {
+  const enrollmentByEmail = new Map(
+    loadLocalBiometricEnrollments().map((entry) => [entry.userEmail.toLowerCase(), entry.estado] as const)
+  );
+
+  const remote = await safeFetch<Array<{ id: string; nombre: string; email: string; activo: boolean; createdAt?: string }>>("/api/v1/usuarios", token);
+  if (remote && remote.length > 0) {
+    return remote.map((item) => ({
+      ...item,
+      source: "api",
+      biometricStatus: enrollmentByEmail.get(item.email.toLowerCase()) ?? "pendiente_biometria",
+      createdAt: item.createdAt
+    }));
+  }
+
+  const localUsers = loadLocalUsers();
+  if (localUsers.length > 0) {
+    return localUsers;
+  }
+
+  saveLocalUsers(mockManagedUsers);
+  return mockManagedUsers;
+}
+
+export async function createManagedUser(
+  payload: { nombre: string; email: string; biometricStatus?: ManagedUser["biometricStatus"] },
+  token?: string
+): Promise<{ ok: boolean; message: string }> {
+  const remote = await safePostJson<{ id: string }>("/api/v1/usuarios", { Nombre: payload.nombre, Email: payload.email }, token);
+  if (remote?.id) {
+    return { ok: true, message: "Usuario creado en API de Usuarios." };
+  }
+
+  const localUsers = loadLocalUsers();
+  const exists = localUsers.some((entry) => entry.email.toLowerCase() === payload.email.toLowerCase());
+  if (exists) {
+    return { ok: false, message: "Ya existe un usuario con ese correo." };
+  }
+
+  localUsers.unshift({
+    id: crypto.randomUUID(),
+    nombre: payload.nombre,
+    email: payload.email,
+    activo: true,
+    source: "local",
+    biometricStatus: payload.biometricStatus ?? "pendiente_biometria",
+    createdAt: new Date().toISOString()
+  });
+  saveLocalUsers(localUsers);
+  return { ok: true, message: "Usuario creado en almacenamiento local de demo." };
+}
+
+export function saveUserBiometricEnrollment(payload: {
+  userEmail: string;
+  userName: string;
+  captures: BiometricCapture[];
+  approvedBy: string;
+}): void {
+  const enrollments = loadLocalBiometricEnrollments();
+  const filtered = enrollments.filter((item) => item.userEmail.toLowerCase() !== payload.userEmail.toLowerCase());
+  filtered.unshift({
+    userEmail: payload.userEmail,
+    userName: payload.userName,
+    captures: payload.captures,
+    estado: "biometria_activa",
+    createdAt: new Date().toISOString(),
+    approvedBy: payload.approvedBy
+  });
+  saveLocalBiometricEnrollments(filtered);
+
+  const users = loadLocalUsers();
+  const index = users.findIndex((item) => item.email.toLowerCase() === payload.userEmail.toLowerCase());
+  if (index >= 0) {
+    users[index] = { ...users[index], biometricStatus: "biometria_activa" };
+    saveLocalUsers(users);
+  }
 }

@@ -13,7 +13,7 @@ Este documento consolida que hace cada microservicio, su estado actual y la ruta
 | Orquestador IA | `App_NosVemos_Orquestador_IA` | Analisis de imagen de camara y recomendaciones | Implementado (MVP IA) |
 | Notificaciones | `App_NosVemos_Notificaciones_Servicio` | Mensajes por eventos (correo/SMS/push) | Definido (pendiente API) |
 | Reportes | `App_NosVemos_Reportes_Servicio` | Analitica y exportaciones operativas | Definido (pendiente API) |
-| Auditoria | `App_NosVemos_Auditoria_Servicio` | Trazabilidad y log inmutable | Definido (pendiente API) |
+| Auditoria | `App_NosVemos_Auditoria_Servicio` | Trazabilidad y log inmutable | Implementado (Worker + API) |
 
 ## Funcionalidades implementadas en MVP
 
@@ -85,6 +85,7 @@ En los servicios MVP (`Autenticacion`, `Usuarios`, `NucleoNegocio`):
 - Usuarios: `http://localhost:7002`
 - NucleoNegocio: `http://localhost:7003`
 - Orquestador IA: `http://localhost:7004`
+- Auditoria: `http://localhost:7005`
 
 Endpoints importantes:
 
@@ -93,3 +94,4 @@ Endpoints importantes:
 - `POST /api/v1/expedientes`
 - `POST /api/v1/ia/analizar-camara`
 - `GET /api/v1/ia/analisis`
+- `GET /api/v1/auditoria/eventos`

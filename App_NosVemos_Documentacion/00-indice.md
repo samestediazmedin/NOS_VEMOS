@@ -14,4 +14,5 @@
 - `12-checklist-firmware-bridge.md`
 - `13-bitacora-2026-04-23.md`
 - `14-especificacion-funcional-camara-biometria.md`
+- `15-bitacora-2026-04-27.md`
 - `schemas/arduino-telemetria-v1.schema.json`
