@@ -102,6 +102,20 @@ Con infraestructura y microservicios arriba, puedes validar flujo completo (regi
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-e2e-db.ps1
 ```
 
+## Tool de validacion de camaras (reconocimiento)
+
+Con `Orquestador IA` arriba en `http://localhost:7004`, puedes validar precision y latencia por camara con reporte JSON/CSV:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\validate-cameras.ps1
+```
+
+Ejemplo con parametros:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\validate-cameras.ps1 -Cameras @("camara_1","camara_2") -AttemptsPerUser 5 -Threshold 0.82
+```
+
 ## Endpoints locales
 
 - SQL Server: `localhost,1433`
@@ -133,3 +147,19 @@ Camara IA de prueba (frontend simple): `App_NosVemos_Movil/src/camara-ia.html`
 Nota: `Autenticacion`, `Usuarios`, `NucleoNegocio`, `OrquestadorIA` y `Auditoria` estan configurados para persistencia SQL Server por defecto en desarrollo local. Si necesitas trabajar sin SQL temporalmente, puedes habilitar modo en memoria en cada servicio cambiando `UseInMemoryDatabase=true` donde aplique.
 
 Eventos de dominio: `NucleoNegocio` publica `expediente.creado` y `expediente.cerrado`; `OrquestadorIA` publica `ia.camara.analizado`, `ia.rostro.reconocido` y `sensor.proximidad.detectada` en RabbitMQ (`nosvemos.domain.events`), y `Auditoria.Worker` los consume para trazabilidad.
+
+## Integracion de dispositivo (ESP32/Arduino)
+
+Ya quedan expuestos en Nucleo (via Pasarela) los endpoints para agregar el dispositivo sin cambiar arquitectura:
+
+- `GET /api/v1/dispositivos/{deviceId}/comandos`
+- `POST /api/v1/dispositivos/{deviceId}/comandos`
+- `POST /api/v1/dispositivos/{deviceId}/resultado-acceso`
+
+Header requerido para hardware:
+
+- `X-Device-Token: <token>`
+
+Configuracion inicial de token por dispositivo en:
+
+- `App_NosVemos_NucleoNegocio_Servicio/src/NosVemos.NucleoNegocio.Api/appsettings.json` (`DeviceTokens`)

@@ -4,6 +4,7 @@ internal sealed class NucleoDbContext(DbContextOptions<NucleoDbContext> options)
 {
     public DbSet<Expediente> Expedientes => Set<Expediente>();
     public DbSet<TelemetriaEvento> TelemetriaEventos => Set<TelemetriaEvento>();
+    public DbSet<DeviceCommand> DeviceCommands => Set<DeviceCommand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -23,6 +24,15 @@ internal sealed class NucleoDbContext(DbContextOptions<NucleoDbContext> options)
             entity.Property(x => x.Signal).HasMaxLength(16);
             entity.Property(x => x.Source).HasMaxLength(16);
             entity.Property(x => x.Checksum).HasMaxLength(8);
+        });
+
+        modelBuilder.Entity<DeviceCommand>(entity =>
+        {
+            entity.HasIndex(x => new { x.DeviceId, x.Status, x.CreatedAt });
+            entity.Property(x => x.DeviceId).HasMaxLength(64);
+            entity.Property(x => x.Command).HasMaxLength(32);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.PayloadJson).HasColumnType("nvarchar(max)");
         });
     }
 }
@@ -49,4 +59,16 @@ internal sealed class TelemetriaEvento
     public string Source { get; set; } = string.Empty;
     public string Checksum { get; set; } = string.Empty;
     public DateTime ReceivedAt { get; set; }
+}
+
+internal sealed class DeviceCommand
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string DeviceId { get; set; } = string.Empty;
+    public string Command { get; set; } = "ninguno";
+    public string PayloadJson { get; set; } = "{}";
+    public string Status { get; set; } = "pending";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddMinutes(3);
+    public DateTime? ConsumedAt { get; set; }
 }

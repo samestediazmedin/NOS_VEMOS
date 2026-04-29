@@ -33,3 +33,16 @@ internal sealed record TelemetriaRecibidaEvent(
     double Confidence,
     string Source,
     DateTime ReceivedAt);
+
+internal sealed record DeviceCommandRequest(
+    string Command,
+    string? TraceId,
+    int? TtlSeconds,
+    object? Payload);
+
+internal sealed record DeviceAccessResultRequest(
+    string? Usuario,
+    double? Score,
+    string Decision,
+    string? TraceId,
+    string? Observacion);

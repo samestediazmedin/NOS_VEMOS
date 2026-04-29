@@ -270,7 +270,7 @@ export interface CameraAnalysisResponse {
   id: string;
   fecha: string;
   evaluacion: { nivelRiesgo: string; recomendacion: string };
-  biometria: { usuarioEsperado: string; usuarioDetectado: string; confianzaRostro: number };
+  biometria: { usuarioEsperado: string; usuarioDetectado: string; usuarioDetectadoNombre?: string; confianzaRostro: number };
   sensor: { distanciaCm: number; alertaProximidad: boolean };
 }
 
@@ -280,6 +280,7 @@ export async function analyzeCameraFrame(params: {
   usuarioDetectado: string;
   confianzaRostro: number;
   distanciaCm?: number;
+  umbralReconocimiento?: number;
   token?: string;
 }): Promise<CameraAnalysisResponse | null> {
   const formData = new FormData();
@@ -288,8 +289,28 @@ export async function analyzeCameraFrame(params: {
   formData.append("usuarioDetectado", params.usuarioDetectado);
   formData.append("confianzaRostro", String(params.confianzaRostro));
   formData.append("distanciaCm", String(params.distanciaCm ?? 0));
+  formData.append("umbralReconocimiento", String(params.umbralReconocimiento ?? 0.82));
 
   return safePostForm<CameraAnalysisResponse>("/api/v1/ia/analizar-camara?contexto=camara_movil", formData, params.token);
+}
+
+export async function enrollBiometricSample(params: {
+  blob: Blob;
+  userId: string;
+  userName: string;
+  angle: "frontal" | "izquierda" | "derecha";
+  quality: number;
+  token?: string;
+}): Promise<boolean> {
+  const formData = new FormData();
+  formData.append("frame", params.blob, "enrolamiento.jpg");
+  formData.append("userId", params.userId);
+  formData.append("userName", params.userName);
+  formData.append("angle", params.angle);
+  formData.append("quality", String(params.quality));
+
+  const response = await safePostForm<{ status: string }>("/api/v1/ia/enrolar-rostro", formData, params.token);
+  return response?.status === "enrolled";
 }
 
 export function appendLocalRecognitionEvent(event: RecognitionEvent): void {
@@ -374,4 +395,35 @@ export function saveUserBiometricEnrollment(payload: {
     users[index] = { ...users[index], biometricStatus: "biometria_activa" };
     saveLocalUsers(users);
   }
+}
+
+export interface SensorTriggerEvent {
+  id: string;
+  createdAt: string;
+  distanceCm: number;
+}
+
+export async function getLatestSensorTrigger(token?: string): Promise<SensorTriggerEvent | null> {
+  const remote = await safeFetch<{
+    eventos: Array<{ id: string; fecha: string; routingKey: string; payload: string }>;
+  }>("/api/v1/auditoria/eventos?routingKey=sensor.proximidad.detectada&limit=1", token);
+
+  const first = remote?.eventos?.[0];
+  if (!first) {
+    return null;
+  }
+
+  let distanceCm = 0;
+  try {
+    const data = JSON.parse(first.payload) as { distanciaCm?: number };
+    distanceCm = typeof data.distanciaCm === "number" ? data.distanciaCm : 0;
+  } catch {
+    distanceCm = 0;
+  }
+
+  return {
+    id: first.id,
+    createdAt: first.fecha,
+    distanceCm
+  };
 }

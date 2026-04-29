@@ -8,9 +8,13 @@ export function RecognitionPage() {
   const [score, setScore] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [status, setStatus] = useState("Camara detenida");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [lastLatencyMs, setLastLatencyMs] = useState(0);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const runningRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -18,33 +22,72 @@ export function RecognitionPage() {
     };
   }, []);
 
-  async function startCamera(): Promise<void> {
+  useEffect(() => {
+    if (!cameraReady) {
+      return;
+    }
+
+    const timer = setInterval(async () => {
+      if (!streamRef.current?.active || runningRef.current || state === "processing" || state === "match" || attempts >= 3) {
+        return;
+      }
+
+      runningRef.current = true;
+      await runRecognition();
+      runningRef.current = false;
+    }, 2200);
+
+    return () => clearInterval(timer);
+  }, [cameraReady, state, attempts]);
+
+  async function startCamera(): Promise<boolean> {
+    if (streamRef.current?.active) {
+      setCameraReady(true);
+      setStatus("Camara preparada");
+      return true;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-      setStatus("Camara activa");
+      setCameraReady(true);
+      setStatus("Camara preparada");
+      return true;
     } catch (error) {
+      setCameraReady(false);
       setStatus(`No se pudo iniciar camara: ${(error as Error).message}`);
+      return false;
     }
   }
 
   async function runRecognition(): Promise<void> {
+    if (!cameraReady || !streamRef.current?.active) {
+      const ready = await startCamera();
+      if (!ready) {
+        return;
+      }
+    }
+
     setState("processing");
     const video = videoRef.current;
-    const canvas = canvasRef.current;
+    const canvas = captureCanvasRef.current;
     if (!video || !canvas || !video.videoWidth) {
       setState("idle");
-      setStatus("Inicia la camara antes de reconocer");
+      setStatus("Camara sin imagen. Espera 1 segundo y reintenta.");
       return;
     }
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const context = canvas.getContext("2d");
-    if (!context) return;
+    if (!context) {
+      setState("idle");
+      return;
+    }
+
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
     if (!blob) {
@@ -56,79 +99,115 @@ export function RecognitionPage() {
     const start = performance.now();
     const response = await analyzeCameraFrame({
       blob,
-      usuarioEsperado: "juan.martinez",
-      usuarioDetectado: "juan.martinez",
-      confianzaRostro: Number((0.7 + Math.random() * 0.28).toFixed(2)),
+      usuarioEsperado: "",
+      usuarioDetectado: "",
+      confianzaRostro: 0,
       distanciaCm: 46
     });
     const latencyMs = Math.round(performance.now() - start);
+    setLastLatencyMs(latencyMs);
 
-    const value = response?.biometria?.confianzaRostro ?? Number(Math.random().toFixed(2));
+    const detectedUser = response?.biometria?.usuarioDetectado ?? "";
+    const detectedName = response?.biometria?.usuarioDetectadoNombre ?? detectedUser;
+    const value = response?.biometria?.confianzaRostro ?? 0;
+    const isMatch = detectedUser.length > 0 && value >= 0.82;
+
     setScore(value);
-    if (value >= 0.85) {
+    if (isMatch) {
       setState("match");
       setAttempts(0);
-      setStatus("Acceso aprobado");
+      setStatus(`Detectado: ${detectedName}`);
     } else {
       setState("no-match");
       setAttempts((prev) => prev + 1);
-      setStatus("Sin coincidencia, revisar fallback");
+      setStatus(detectedUser ? `Detectado ${detectedUser} con score bajo` : "No reconocido, aplicar fallback");
     }
 
     appendLocalRecognitionEvent({
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
-      userId: "USR-0089",
-      userName: "Juan Martinez",
+      userId: detectedUser || null,
+      userName: response?.biometria?.usuarioDetectadoNombre ?? null,
       score: value,
-      threshold: 0.85,
-      result: value >= 0.85 ? "match" : attempts + 1 >= 3 ? "fallback" : "no_match",
+      threshold: 0.82,
+      result: isMatch ? "match" : attempts + 1 >= 3 ? "fallback" : "no_match",
       deviceId: "DISP-NOR-001",
       latencyMs,
       reasonCode: response ? "API_ANALYSIS" : "LOCAL_SIMULATION"
     });
   }
 
+  function resetRecognition(): void {
+    setAttempts(0);
+    setScore(0);
+    setState("idle");
+    setStatus(cameraReady ? "Camara preparada" : "Camara detenida");
+  }
+
+  const statusClass =
+    attempts >= 3 ? "status-pill pill-bad" : state === "match" ? "status-pill pill-ok" : state === "no-match" ? "status-pill pill-warn" : "status-pill pill-info";
+
+  const overlayMessage = state === "processing" ? "Analizando rostro..." : "Alinea el rostro en el marco";
+  const canEnter = state === "match";
+
   return (
-    <div className="grid split">
-      <section className="card">
+    <div className="recognition-layout">
+      <section className="card recognition-camera-card">
         <h3>Reconocimiento en vivo</h3>
-        <p className="page-intro">Valida identidad en tiempo real y ejecuta fallback cuando superas intentos fallidos.</p>
-        <div className="camera-box">
+        <p className="page-intro">Identificacion automatica 1:N en tiempo real con fallback cuando superas intentos fallidos.</p>
+        <div className="camera-box recognition-camera-box">
           <div className={state === "match" ? "frame ok" : state === "no-match" ? "frame bad" : "frame"} />
-          <span>{state === "processing" ? "Analizando rostro..." : "Camara activa"}</span>
+          <span className="camera-overlay-label">{overlayMessage}</span>
+          {canEnter && <span className="camera-access-ok">Puede ingresar</span>}
           <video ref={videoRef} autoPlay playsInline className="camera-video" />
-          <canvas ref={canvasRef} hidden />
+          <canvas ref={captureCanvasRef} hidden />
         </div>
-        <span className="status-pill pill-info">{status}</span>
-        <div className="actions">
-          <button type="button" className="btn-secondary" onClick={startCamera}>
-            Iniciar camara
-          </button>
-          <button className="btn-primary" onClick={runRecognition} disabled={state === "processing" || attempts >= 3}>
-            Iniciar reconocimiento
-          </button>
+        <div className="recognition-status-line">
+          <span className={statusClass}>{status}</span>
+          {cameraReady && <span className="status-pill pill-info">Escaneo automatico activo</span>}
         </div>
       </section>
 
-      <section className="card">
-        <h3>Resultado</h3>
-        <div className="status-row">
-          <span>Umbral</span>
-          <strong>0.85</strong>
-        </div>
-        <div className="status-row">
-          <span>Score</span>
-          <strong>{score}</strong>
-        </div>
-        <div className="status-row">
-          <span>Intentos fallidos</span>
-          <strong>{attempts}/3</strong>
-        </div>
-        {state === "match" && <p className="ok">Match valido: activar dispositivo.</p>}
-        {state === "no-match" && <p className="warn">No coincide: reintentar o aplicar fallback seguro.</p>}
-        {attempts >= 3 && <p className="bad">Bloqueado: usar PIN o credencial secundaria.</p>}
-      </section>
+      <div className="recognition-bottom">
+        <section className="card recognition-controls-card">
+          <h3>Control operativo</h3>
+          <p className="page-intro">Prepara la camara una sola vez. El reconocimiento se ejecuta automaticamente.</p>
+          <div className="actions recognition-actions">
+            <button type="button" className="btn-primary" onClick={startCamera}>
+              {cameraReady ? "Camara preparada" : "Preparar camara"}
+            </button>
+            <button className="btn-secondary" onClick={runRecognition} disabled={!cameraReady || state === "processing" || attempts >= 3}>
+              Identificar ahora
+            </button>
+            <button type="button" className="ghost" onClick={resetRecognition}>
+              Reiniciar intentos
+            </button>
+          </div>
+        </section>
+
+        <section className="card recognition-metrics-card">
+          <h3>Resultado IA</h3>
+          <div className="status-row">
+            <span>Umbral</span>
+            <strong>0.82</strong>
+          </div>
+          <div className="status-row">
+            <span>Score</span>
+            <strong>{score}</strong>
+          </div>
+          <div className="status-row">
+            <span>Intentos fallidos</span>
+            <strong>{attempts}/3</strong>
+          </div>
+          <div className="status-row">
+            <span>Latencia</span>
+            <strong>{lastLatencyMs} ms</strong>
+          </div>
+          {state === "match" && <p className="ok">Match valido: activar dispositivo.</p>}
+          {state === "no-match" && <p className="warn">No coincide: reintentar o aplicar fallback seguro.</p>}
+          {attempts >= 3 && <p className="bad">Bloqueado: usar PIN o credencial secundaria.</p>}
+        </section>
+      </div>
     </div>
   );
 }

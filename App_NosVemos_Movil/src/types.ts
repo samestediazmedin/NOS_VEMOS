@@ -23,6 +23,7 @@ export interface BiometricCapture {
   angle: FaceAngle;
   quality: number;
   createdAt: string;
+  imageDataUrl?: string;
 }
 
 export interface RecognitionEvent {

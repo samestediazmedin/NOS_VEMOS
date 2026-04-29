@@ -102,9 +102,7 @@
 
     <div class="meta">
       <input id="token" placeholder="Bearer token (opcional para gateway)" />
-      <input id="usuarioEsperado" placeholder="Usuario esperado" value="usuario_demo" />
-      <input id="usuarioDetectado" placeholder="Usuario detectado por rostro" value="usuario_demo" />
-      <input id="confianzaRostro" type="number" min="0" max="1" step="0.01" value="0.92" />
+      <input id="umbralReconocimiento" type="number" min="0" max="1" step="0.01" value="0.82" />
     </div>
 
     <div id="sensorState" class="sensor">Sensor de proximidad: no inicializado.</div>
@@ -120,9 +118,7 @@
     const startBtn = document.getElementById("start");
     const captureBtn = document.getElementById("capture");
     const tokenInput = document.getElementById("token");
-    const usuarioEsperadoInput = document.getElementById("usuarioEsperado");
-    const usuarioDetectadoInput = document.getElementById("usuarioDetectado");
-    const confianzaRostroInput = document.getElementById("confianzaRostro");
+    const umbralReconocimientoInput = document.getElementById("umbralReconocimiento");
 
     let stream;
     let distanciaCm = 0;
@@ -174,10 +170,11 @@
       const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.9));
       const formData = new FormData();
       formData.append("frame", blob, "captura.jpg");
-      formData.append("usuarioEsperado", usuarioEsperadoInput.value || "");
-      formData.append("usuarioDetectado", usuarioDetectadoInput.value || "");
-      formData.append("confianzaRostro", confianzaRostroInput.value || "0");
+      formData.append("usuarioEsperado", "");
+      formData.append("usuarioDetectado", "");
+      formData.append("confianzaRostro", "0");
       formData.append("distanciaCm", String(distanciaCm || 0));
+      formData.append("umbralReconocimiento", umbralReconocimientoInput.value || "0.82");
 
       try {
         const headers = {};

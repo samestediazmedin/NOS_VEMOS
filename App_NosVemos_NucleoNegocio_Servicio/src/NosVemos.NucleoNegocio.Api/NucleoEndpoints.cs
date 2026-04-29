@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 internal static class NucleoEndpoints
 {
@@ -144,6 +145,21 @@ internal static class NucleoEndpoints
                     entity.ReceivedAt),
                 ct);
 
+            if (string.Equals(entity.SensorType, "proximidad", StringComparison.OrdinalIgnoreCase))
+            {
+                await eventPublisher.PublishAsync(
+                    "sensor.proximidad.detectada",
+                    new
+                    {
+                        telemetriaId = entity.Id,
+                        fecha = entity.ReceivedAt,
+                        deviceId = entity.DeviceId,
+                        distanciaCm = entity.Value,
+                        alertaProximidad = entity.Value < 55
+                    },
+                    ct);
+            }
+
             return Results.Accepted(value: new
             {
                 status = "accepted",
@@ -153,6 +169,137 @@ internal static class NucleoEndpoints
                 receivedAt = entity.ReceivedAt
             });
         });
+
+        var dispositivosApi = app.MapGroup("/api/v1/dispositivos");
+
+        dispositivosApi.MapGet("/{deviceId}/comandos", async (string deviceId, HttpRequest request, NucleoDbContext db, CancellationToken ct) =>
+        {
+            if (!IsValidDeviceToken(request, app.Configuration, deviceId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var now = DateTime.UtcNow;
+            var normalizedDeviceId = deviceId.Trim();
+
+            var cmd = await db.DeviceCommands
+                .Where(x => x.DeviceId == normalizedDeviceId && x.Status == "pending" && x.ExpiresAt > now)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (cmd is null)
+            {
+                return Results.Ok(new
+                {
+                    comando = "ninguno",
+                    deviceId = normalizedDeviceId,
+                    issuedAt = now
+                });
+            }
+
+            cmd.Status = "consumed";
+            cmd.ConsumedAt = now;
+            await db.SaveChangesAsync(ct);
+
+            object payload;
+            try
+            {
+                payload = JsonSerializer.Deserialize<object>(cmd.PayloadJson) ?? new { };
+            }
+            catch
+            {
+                payload = new { raw = cmd.PayloadJson };
+            }
+
+            return Results.Ok(new
+            {
+                commandId = cmd.Id,
+                comando = cmd.Command,
+                deviceId = cmd.DeviceId,
+                payload,
+                issuedAt = cmd.CreatedAt,
+                expiresAt = cmd.ExpiresAt
+            });
+        });
+
+        dispositivosApi.MapPost("/{deviceId}/comandos", async (string deviceId, DeviceCommandRequest request, HttpRequest http, NucleoDbContext db, CancellationToken ct) =>
+        {
+            if (!IsValidDeviceToken(http, app.Configuration, deviceId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var normalizedCommand = (request.Command ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedCommand is not ("abrir" or "capturar_registro" or "ninguno"))
+            {
+                return Results.BadRequest(new { message = "Command invalido. Usa: abrir, capturar_registro o ninguno." });
+            }
+
+            var ttlSeconds = Math.Clamp(request.TtlSeconds ?? 30, 5, 300);
+            var now = DateTime.UtcNow;
+            var entity = new DeviceCommand
+            {
+                Id = Guid.NewGuid(),
+                DeviceId = deviceId.Trim(),
+                Command = normalizedCommand,
+                PayloadJson = JsonSerializer.Serialize(request.Payload ?? new { }),
+                Status = "pending",
+                CreatedAt = now,
+                ExpiresAt = now.AddSeconds(ttlSeconds)
+            };
+
+            db.DeviceCommands.Add(entity);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Created($"/api/v1/dispositivos/{entity.DeviceId}/comandos/{entity.Id}", new
+            {
+                commandId = entity.Id,
+                comando = entity.Command,
+                deviceId = entity.DeviceId,
+                ttlSeconds,
+                traceId = request.TraceId
+            });
+        });
+
+        dispositivosApi.MapPost("/{deviceId}/resultado-acceso", async (string deviceId, DeviceAccessResultRequest request, HttpRequest http) =>
+        {
+            if (!IsValidDeviceToken(http, app.Configuration, deviceId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var decision = (request.Decision ?? string.Empty).Trim().ToLowerInvariant();
+            if (decision is not ("autorizado" or "denegado" or "fallback" or "sin_rostro"))
+            {
+                return Results.BadRequest(new { message = "Decision invalida." });
+            }
+
+            return Results.Accepted(value: new
+            {
+                ok = true,
+                deviceId = deviceId.Trim(),
+                usuario = request.Usuario,
+                score = request.Score,
+                decision,
+                traceId = request.TraceId,
+                receivedAt = DateTime.UtcNow
+            });
+        });
+    }
+
+    private static bool IsValidDeviceToken(HttpRequest request, IConfiguration configuration, string deviceId)
+    {
+        var provided = request.Headers["X-Device-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(provided))
+        {
+            return false;
+        }
+
+        var expected = configuration[$"DeviceTokens:{deviceId}"]
+            ?? configuration["DeviceTokens:default"]
+            ?? string.Empty;
+
+        return !string.IsNullOrWhiteSpace(expected) && string.Equals(provided, expected, StringComparison.Ordinal);
     }
 
     private static string? ValidateTelemetria(TelemetriaIngestionRequest request)

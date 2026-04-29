@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { analyzeCameraFrame, createManagedUser, getManagedUsers, saveUserBiometricEnrollment } from "../../services/api";
+import { analyzeCameraFrame, createManagedUser, enrollBiometricSample, getLatestSensorTrigger, getManagedUsers, saveUserBiometricEnrollment } from "../../services/api";
 import type { BiometricCapture, FaceAngle, ManagedUser } from "../../types";
 
 const MIN_QUALITY = 80;
@@ -24,11 +24,14 @@ export function UsersAdminPage({ token }: { token?: string }) {
   const [captures, setCaptures] = useState<BiometricCapture[]>([]);
   const [feedback, setFeedback] = useState("Completa datos y registra 3 fotos para crear el usuario.");
   const [cameraStatus, setCameraStatus] = useState("Camara detenida");
+  const [cameraGuide, setCameraGuide] = useState("Esperando activacion por sensor");
   const [loading, setLoading] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const lastTriggerIdRef = useRef<string | null>(null);
+  const autoCaptureRef = useRef(false);
 
   const nextAngle = useMemo(
     () => REQUIRED_ANGLES.find((angle) => !captures.some((capture) => capture.angle === angle)),
@@ -46,10 +49,63 @@ export function UsersAdminPage({ token }: { token?: string }) {
   }, [token]);
 
   useEffect(() => {
+    const triggerTimer = setInterval(async () => {
+      const latest = await getLatestSensorTrigger(token);
+      if (!latest || latest.id === lastTriggerIdRef.current) {
+        return;
+      }
+
+      lastTriggerIdRef.current = latest.id;
+      if (!streamRef.current) {
+        await startCamera();
+      }
+
+      setCameraStatus(`Sensor activo (${Math.round(latest.distanceCm)} cm)`);
+      if (consent && nextAngle && !autoCaptureRef.current) {
+        autoCaptureRef.current = true;
+        await capturePhoto();
+        autoCaptureRef.current = false;
+      }
+    }, 1400);
+
+    const guideTimer = setInterval(() => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || !video.videoWidth) {
+        setCameraGuide("Alinea el rostro al ovalo");
+        return;
+      }
+
+      canvas.width = 160;
+      canvas.height = 120;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return;
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let luminanceSum = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        luminanceSum += 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+      }
+
+      const luminance = luminanceSum / (pixels.length / 4);
+      if (luminance < 70) {
+        setCameraGuide("Mas luz para capturar");
+      } else if (luminance > 210) {
+        setCameraGuide("Reduce luz intensa");
+      } else {
+        setCameraGuide(`Listo para ${nextAngle ? angleLabel(nextAngle) : "finalizar"}`);
+      }
+    }, 900);
+
     return () => {
+      clearInterval(triggerTimer);
+      clearInterval(guideTimer);
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, []);
+  }, [consent, nextAngle, token]);
 
   async function startCamera(): Promise<void> {
     try {
@@ -65,6 +121,7 @@ export function UsersAdminPage({ token }: { token?: string }) {
   }
 
   async function capturePhoto(): Promise<void> {
+    const cleanName = nombre.trim();
     if (!consent) {
       setFeedback("Debes aceptar consentimiento biometrico para capturar.");
       return;
@@ -91,6 +148,7 @@ export function UsersAdminPage({ token }: { token?: string }) {
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
     if (!blob) {
       setFeedback("No se pudo generar la foto para analisis.");
       return;
@@ -101,8 +159,8 @@ export function UsersAdminPage({ token }: { token?: string }) {
     const response = await analyzeCameraFrame({
       blob,
       usuarioEsperado: userRef,
-      usuarioDetectado: userRef,
-      confianzaRostro: Number((0.82 + Math.random() * 0.15).toFixed(2)),
+      usuarioDetectado: "",
+      confianzaRostro: 0,
       distanciaCm: 45,
       token
     });
@@ -120,7 +178,8 @@ export function UsersAdminPage({ token }: { token?: string }) {
     const nextCapture: BiometricCapture = {
       angle: nextAngle,
       quality,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      imageDataUrl
     };
 
     setCaptures((prev) => {
@@ -130,8 +189,21 @@ export function UsersAdminPage({ token }: { token?: string }) {
       );
     });
 
+    const enrolled = await enrollBiometricSample({
+      blob,
+      userId: userRef,
+      userName: cleanName.length > 0 ? cleanName : userRef,
+      angle: nextAngle,
+      quality,
+      token
+    });
+
     setCameraStatus("Captura validada");
-    setFeedback(`Foto ${angleLabel(nextAngle)} registrada con ${quality}% de calidad.`);
+    setFeedback(
+      enrolled
+        ? `Foto ${angleLabel(nextAngle)} registrada con ${quality}% y enviada a IA para reconocimiento.`
+        : `Foto ${angleLabel(nextAngle)} registrada con ${quality}%. No se pudo sincronizar con IA, quedo en local.`
+    );
   }
 
   function recapture(angle: FaceAngle): void {
@@ -220,7 +292,7 @@ export function UsersAdminPage({ token }: { token?: string }) {
 
             <div className="camera-box">
               <div className="face-guide" />
-              <span>Vista camara (registro de usuario)</span>
+              <span>{cameraGuide}</span>
               <video ref={videoRef} autoPlay playsInline className="camera-video" />
               <canvas ref={canvasRef} hidden />
             </div>

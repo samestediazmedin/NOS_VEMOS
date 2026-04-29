@@ -54,4 +54,59 @@ internal sealed class ImageAnalysisService
             _ => $"Sin alertas criticas en {area}; continuar monitoreo regular."
         };
     }
+
+    public double[] ExtractFeatureVector(Image<Rgba32> image)
+    {
+        const int gridRows = 4;
+        const int gridCols = 4;
+        const int bins = 16;
+        var cellBrightness = new double[gridRows * gridCols];
+        var cellColorDiff = new double[gridRows * gridCols];
+        var counts = new int[gridRows * gridCols];
+        var histogram = new double[bins];
+
+        image.ProcessPixelRows(accessor =>
+        {
+            for (var y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                var rowBucket = Math.Min(gridRows - 1, y * gridRows / accessor.Height);
+                for (var x = 0; x < row.Length; x++)
+                {
+                    var p = row[x];
+                    var colBucket = Math.Min(gridCols - 1, x * gridCols / row.Length);
+                    var bucket = rowBucket * gridCols + colBucket;
+                    var luminance = (0.2126 * p.R + 0.7152 * p.G + 0.0722 * p.B) / 255.0;
+                    cellBrightness[bucket] += luminance;
+                    cellColorDiff[bucket] += (p.R - p.B) / 255.0;
+                    counts[bucket] += 1;
+
+                    var bin = Math.Min(bins - 1, (int)Math.Floor(luminance * bins));
+                    histogram[bin] += 1;
+                }
+            }
+        });
+
+        for (var i = 0; i < counts.Length; i++)
+        {
+            if (counts[i] == 0)
+            {
+                continue;
+            }
+
+            cellBrightness[i] /= counts[i];
+            cellColorDiff[i] /= counts[i];
+        }
+
+        var totalHistogram = histogram.Sum();
+        if (totalHistogram > 0)
+        {
+            for (var i = 0; i < histogram.Length; i++)
+            {
+                histogram[i] /= totalHistogram;
+            }
+        }
+
+        return [.. cellBrightness, .. cellColorDiff, .. histogram];
+    }
 }

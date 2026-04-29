@@ -27,3 +27,9 @@ Puerto por defecto: `http://localhost:7004`
 
 - Cliente de prueba: `App_NosVemos_Movil/src/camara-ia.html`
 - Ruta recomendada de acceso: `http://localhost:7000/api/v1/ia/analizar-camara`
+
+## Tooling externo
+
+La validacion de reconocimiento por camara se mantiene como tooling transversal del repositorio en:
+
+- `tools/validate-cameras.ps1`

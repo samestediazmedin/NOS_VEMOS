@@ -12,6 +12,7 @@
   --brand-strong: #07335a;
   --accent: #00a9b3;
   --accent-strong: #007d85;
+  --focus: #26b8d4;
   --ok: #128257;
   --warn: #ae6a0a;
   --bad: #b83939;
@@ -51,10 +52,11 @@ button,
 input,
 select {
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
+  border: 1px solid #b8cbe0;
   padding: 11px 12px;
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   color: var(--ink);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
 input::placeholder {
@@ -64,8 +66,10 @@ input::placeholder {
 input:focus,
 button:focus-visible,
 select:focus {
-  outline: 2px solid rgba(0, 169, 179, 0.35);
+  outline: 2px solid color-mix(in oklab, var(--focus) 45%, white);
   outline-offset: 2px;
+  border-color: #79cbe2;
+  box-shadow: 0 0 0 4px rgba(38, 184, 212, 0.12);
 }
 
 button {
@@ -433,17 +437,74 @@ nav {
   color: #1f4569;
 }
 
+.recognition-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.recognition-camera-card {
+  padding: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.recognition-camera-box {
+  position: relative;
+  min-height: 430px;
+  height: 430px;
+  width: 100%;
+  max-width: 100%;
+  border: 2px solid #4f8eb3;
+  border-radius: 16px;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow:
+    inset 0 0 0 1px rgba(196, 230, 249, 0.24),
+    0 14px 28px rgba(8, 34, 52, 0.22);
+}
+
+.recognition-bottom {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.4fr) minmax(260px, 1fr);
+  gap: 12px;
+  margin-top: 4px;
+  position: relative;
+  z-index: 2;
+}
+
+.recognition-controls-card,
+.recognition-metrics-card {
+  padding: 16px;
+}
+
+.recognition-actions button {
+  min-width: 190px;
+}
+
+.recognition-status-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .camera-box {
   margin: 10px 0;
-  min-height: 240px;
-  border: 1px solid #467ea1;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #0f3d62, #0b2941);
+  min-height: 420px;
+  height: auto;
+  border: 1px solid #6ea3c4;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 20% 22%, rgba(34, 168, 205, 0.18), transparent 34%),
+    radial-gradient(circle at 80% 72%, rgba(16, 108, 177, 0.2), transparent 30%),
+    #031322;
   color: #e9f8ff;
   display: grid;
   place-items: center;
   position: relative;
   overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .camera-video {
@@ -452,24 +513,30 @@ nav {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 12px;
-  opacity: 0.72;
+  border-radius: inherit;
+  opacity: 1;
+  filter: brightness(1.08) contrast(1.12) saturate(1.14);
+  z-index: 0;
+  transition: filter 220ms ease;
 }
 
 .face-guide {
-  width: 120px;
-  height: 170px;
+  width: 190px;
+  height: 270px;
   border-radius: 999px;
-  border: 3px dashed rgba(255, 255, 255, 0.84);
+  border: 3px solid rgba(171, 231, 255, 0.95);
+  box-shadow:
+    0 0 0 3px rgba(0, 0, 0, 0.28),
+    0 0 22px rgba(102, 214, 255, 0.45);
   z-index: 1;
 }
 
 .frame {
-  width: 140px;
-  height: 170px;
-  border: 3px solid #98bbc4;
-  border-radius: 12px;
-  z-index: 1;
+  width: 150px;
+  height: 190px;
+  border: 3px solid rgba(175, 226, 250, 0.9);
+  border-radius: 20px;
+  z-index: 2;
 }
 
 .frame.ok {
@@ -481,9 +548,54 @@ nav {
 }
 
 .camera-box span {
-  z-index: 1;
-  font-weight: 600;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  z-index: 3;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.75);
+  background: rgba(4, 20, 32, 0.58);
+  border: 1px solid rgba(158, 221, 251, 0.75);
+  border-radius: 999px;
+  padding: 6px 12px;
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.camera-state-chip {
+  top: 14px;
+  left: 14px;
+  bottom: auto;
+  transform: none;
+  background: rgba(8, 35, 54, 0.78);
+  border-color: rgba(162, 221, 250, 0.84);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  padding: 5px 10px;
+}
+
+.camera-overlay-label {
+  background: rgba(6, 24, 37, 0.72);
+  border-color: rgba(188, 232, 255, 0.8);
+  font-size: 0.84rem;
+  max-width: calc(100% - 24px);
+  text-align: center;
+}
+
+.camera-access-ok {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #0d5a39;
+  background: rgba(218, 251, 234, 0.95);
+  border: 1px solid #6ad19d;
+  box-shadow: 0 8px 16px rgba(10, 65, 42, 0.25);
 }
 
 .checkbox {
@@ -571,6 +683,25 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .recognition-camera-box {
+    min-height: 340px;
+    height: 340px;
+  }
+
+  .face-guide {
+    width: 170px;
+    height: 240px;
+  }
+
+  .frame {
+    width: 132px;
+    height: 170px;
+  }
+
+  .recognition-bottom {
+    grid-template-columns: 1fr;
+  }
+
   .span2 {
     grid-column: auto;
   }
@@ -601,6 +732,47 @@ th {
   .actions button,
   .login-form button {
     width: 100%;
+  }
+
+  .recognition-actions button {
+    min-width: 0;
+  }
+
+  .recognition-camera-box {
+    min-height: 260px;
+    height: 260px;
+  }
+
+  .face-guide {
+    width: 145px;
+    height: 210px;
+  }
+
+  .frame {
+    width: 112px;
+    height: 142px;
+    border-radius: 14px;
+  }
+
+  .camera-state-chip {
+    top: 10px;
+    left: 10px;
+    font-size: 0.68rem;
+    padding: 4px 8px;
+    letter-spacing: 0.03em;
+  }
+
+  .camera-overlay-label {
+    bottom: 10px;
+    font-size: 0.75rem;
+    padding: 5px 10px;
+  }
+
+  .camera-access-ok {
+    top: 10px;
+    right: 10px;
+    font-size: 0.72rem;
+    padding: 5px 9px;
   }
 }
 

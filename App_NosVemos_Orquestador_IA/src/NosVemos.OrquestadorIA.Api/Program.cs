@@ -9,6 +9,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<ImageAnalysisService>();
+builder.Services.AddSingleton<BiometricRecognitionService>();
 var useInMemory = builder.Configuration.GetValue<bool?>("UseInMemoryDatabase") ?? false;
 builder.Services.AddDbContext<AnalisisDbContext>(options =>
 {
