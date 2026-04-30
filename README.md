@@ -116,6 +116,20 @@ Ejemplo con parametros:
 powershell -ExecutionPolicy Bypass -File .\tools\validate-cameras.ps1 -Cameras @("camara_1","camara_2") -AttemptsPerUser 5 -Threshold 0.82
 ```
 
+## Tool de verificacion de seguridad facial
+
+Con `Pasarela` arriba en `http://localhost:7000`, puedes ejecutar una validacion rapida de denegacion segura para casos desconocidos:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\verify-face-security.ps1
+```
+
+Ejemplo con parametros:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\verify-face-security.ps1 -BaseUrl "http://localhost:7000" -ImagePath ".\samples\rostro.jpg" -Threshold 0.92
+```
+
 ## Endpoints locales
 
 - SQL Server: `localhost,1433`

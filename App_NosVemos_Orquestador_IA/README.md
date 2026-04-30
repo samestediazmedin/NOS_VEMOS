@@ -12,6 +12,7 @@ dotnet run --project App_NosVemos_Orquestador_IA/src/NosVemos.OrquestadorIA.Api
 
 - `GET /health`
 - `POST /api/v1/ia/analizar-camara` (multipart con campo `frame`)
+- `POST /api/v1/ia/rostro/verificar` (alias compatible para validacion de acceso)
 - `GET /api/v1/ia/analisis`
 - `GET /api/v1/ia/analisis/{id}`
 
@@ -33,3 +34,4 @@ Puerto por defecto: `http://localhost:7004`
 La validacion de reconocimiento por camara se mantiene como tooling transversal del repositorio en:
 
 - `tools/validate-cameras.ps1`
+- `tools/verify-face-security.ps1`
