@@ -73,7 +73,12 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
         return new BiometricEnrollmentResult(profile.UserId, profile.UserName, sampleCount);
     }
 
-    public async Task<BiometricRecognitionResult?> RecognizeAsync(AnalisisDbContext db, Image<Rgba32> image, double threshold, CancellationToken ct)
+    public async Task<BiometricRecognitionResult> RecognizeAsync(
+        AnalisisDbContext db,
+        Image<Rgba32> image,
+        double threshold,
+        double minTopMargin,
+        CancellationToken ct)
     {
         var query = await db.BiometricProfiles
             .AsNoTracking()
@@ -83,11 +88,11 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
 
         if (query.Count == 0)
         {
-            return null;
+            return new BiometricRecognitionResult(null, null, 0, false, 0, "NO_PROFILES");
         }
 
         var input = analysisService.ExtractFeatureVector(image);
-        var best = query
+        var ranked = query
             .Select(profile =>
             {
                 var score = profile.Samples
@@ -97,13 +102,27 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
                 return new { profile.UserId, profile.UserName, Score = score };
             })
             .OrderByDescending(x => x.Score)
-            .First();
+            .ToList();
+
+        var best = ranked[0];
+        var secondBest = ranked.Count > 1 ? ranked[1].Score : 0;
 
         var confidence = Math.Round(best.Score, 4);
-        return new BiometricRecognitionResult(best.UserId, best.UserName, confidence, confidence >= threshold);
+        var margin = Math.Round(confidence - secondBest, 4);
+        if (confidence < threshold)
+        {
+            return new BiometricRecognitionResult(null, null, confidence, false, Math.Round(secondBest, 4), "LOW_CONFIDENCE");
+        }
+
+        if (margin < minTopMargin)
+        {
+            return new BiometricRecognitionResult(null, null, confidence, false, Math.Round(secondBest, 4), "AMBIGUOUS_MATCH");
+        }
+
+        return new BiometricRecognitionResult(best.UserId, best.UserName, confidence, true, Math.Round(secondBest, 4), "THRESHOLD_OK");
     }
 
-    public async Task<BiometricRecognitionResult?> VerifyAgainstUserAsync(
+    public async Task<BiometricRecognitionResult> VerifyAgainstUserAsync(
         AnalisisDbContext db,
         Image<Rgba32> image,
         string expectedUserId,
@@ -113,7 +132,7 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
         var normalizedExpected = Normalize(expectedUserId, string.Empty);
         if (string.IsNullOrWhiteSpace(normalizedExpected))
         {
-            return null;
+            return new BiometricRecognitionResult(null, null, 0, false, 0, "INVALID_EXPECTED_USER");
         }
 
         var profile = await db.BiometricProfiles
@@ -123,7 +142,7 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
 
         if (profile is null || profile.Samples.Count == 0)
         {
-            return null;
+            return new BiometricRecognitionResult(null, null, 0, false, 0, "USER_NOT_ENROLLED");
         }
 
         var input = analysisService.ExtractFeatureVector(image);
@@ -133,7 +152,9 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
             .Max();
 
         var confidence = Math.Round(score, 4);
-        return new BiometricRecognitionResult(profile.UserId, profile.UserName, confidence, confidence >= threshold);
+        return confidence >= threshold
+            ? new BiometricRecognitionResult(profile.UserId, profile.UserName, confidence, true, 0, "THRESHOLD_OK")
+            : new BiometricRecognitionResult(null, null, confidence, false, 0, "LOW_CONFIDENCE");
     }
 
     private static string Normalize(string? value, string fallback)
@@ -184,4 +205,10 @@ internal sealed class BiometricRecognitionService(ImageAnalysisService analysisS
 }
 
 internal sealed record BiometricEnrollmentResult(string UserId, string UserName, int SampleCount);
-internal sealed record BiometricRecognitionResult(string UserId, string UserName, double Confidence, bool IsMatch);
+internal sealed record BiometricRecognitionResult(
+    string? UserId,
+    string? UserName,
+    double Confidence,
+    bool IsMatch,
+    double SecondBestConfidence,
+    string MatchReason);

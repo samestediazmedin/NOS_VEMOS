@@ -271,6 +271,17 @@ export interface CameraAnalysisResponse {
   fecha: string;
   evaluacion: { nivelRiesgo: string; recomendacion: string };
   biometria: { usuarioEsperado: string; usuarioDetectado: string; usuarioDetectadoNombre?: string; confianzaRostro: number };
+  seguridad?: {
+    usuarioDetectado: string | null;
+    confianza: number;
+    segundaMejorConfianza: number;
+    umbralExactitud: number;
+    margenMinimo: number;
+    coincide: boolean;
+    esExacto: boolean;
+    accesoPermitido: boolean;
+    motivo: string;
+  };
   sensor: { distanciaCm: number; alertaProximidad: boolean };
 }
 

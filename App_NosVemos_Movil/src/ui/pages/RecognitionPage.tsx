@@ -107,10 +107,12 @@ export function RecognitionPage() {
     const latencyMs = Math.round(performance.now() - start);
     setLastLatencyMs(latencyMs);
 
-    const detectedUser = response?.biometria?.usuarioDetectado ?? "";
+    const security = response?.seguridad;
+    const detectedUser = security?.usuarioDetectado ?? response?.biometria?.usuarioDetectado ?? "";
     const detectedName = response?.biometria?.usuarioDetectadoNombre ?? detectedUser;
-    const value = response?.biometria?.confianzaRostro ?? 0;
-    const isMatch = detectedUser.length > 0 && value >= 0.82;
+    const value = security?.confianza ?? response?.biometria?.confianzaRostro ?? 0;
+    const isMatch = security?.accesoPermitido ?? (detectedUser.length > 0 && value >= 0.82);
+    const denyReason = security?.motivo ?? "Usuario no reconocido";
 
     setScore(value);
     if (isMatch) {
@@ -120,7 +122,7 @@ export function RecognitionPage() {
     } else {
       setState("no-match");
       setAttempts((prev) => prev + 1);
-      setStatus(detectedUser ? `Detectado ${detectedUser} con score bajo` : "No reconocido, aplicar fallback");
+      setStatus(`ACCESO DENEGADO: ${denyReason}`);
     }
 
     appendLocalRecognitionEvent({
@@ -129,11 +131,11 @@ export function RecognitionPage() {
       userId: detectedUser || null,
       userName: response?.biometria?.usuarioDetectadoNombre ?? null,
       score: value,
-      threshold: 0.82,
+      threshold: security?.umbralExactitud ?? 0.82,
       result: isMatch ? "match" : attempts + 1 >= 3 ? "fallback" : "no_match",
       deviceId: "DISP-NOR-001",
       latencyMs,
-      reasonCode: response ? "API_ANALYSIS" : "LOCAL_SIMULATION"
+      reasonCode: isMatch ? "ACCESS_GRANTED" : security?.motivo?.toUpperCase().replace(/\s+/g, "_") ?? "ACCESS_DENIED_UNKNOWN_USER"
     });
   }
 
@@ -149,6 +151,7 @@ export function RecognitionPage() {
 
   const overlayMessage = state === "processing" ? "Analizando rostro..." : "Alinea el rostro en el marco";
   const canEnter = state === "match";
+  const denied = state === "no-match";
 
   return (
     <div className="recognition-layout">
@@ -159,6 +162,7 @@ export function RecognitionPage() {
           <div className={state === "match" ? "frame ok" : state === "no-match" ? "frame bad" : "frame"} />
           <span className="camera-overlay-label">{overlayMessage}</span>
           {canEnter && <span className="camera-access-ok">Puede ingresar</span>}
+          {denied && <span className="camera-access-denied">ACCESO DENEGADO</span>}
           <video ref={videoRef} autoPlay playsInline className="camera-video" />
           <canvas ref={captureCanvasRef} hidden />
         </div>

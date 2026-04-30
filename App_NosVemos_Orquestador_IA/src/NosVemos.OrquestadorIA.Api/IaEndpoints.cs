@@ -9,6 +9,9 @@ internal static class IaEndpoints
 {
     public static void MapIaEndpoints(this WebApplication app)
     {
+        var thresholdDefault = app.Configuration.GetValue<double?>("Biometria:ThresholdDefault") ?? 0.92;
+        var minTopMargin = app.Configuration.GetValue<double?>("Biometria:MinTopMargin") ?? 0.04;
+
         app.MapGet("/api/v1/ia/rostros/enrolados", async (AnalisisDbContext db, CancellationToken ct) =>
         {
             var data = await db.BiometricProfiles
@@ -93,7 +96,7 @@ internal static class IaEndpoints
             return found is null ? Results.NotFound() : Results.Ok(found);
         });
 
-        app.MapPost("/api/v1/ia/analizar-camara", async (HttpRequest request, string? contexto, IEventPublisher eventPublisher, AnalisisDbContext db, ImageAnalysisService analysisService, BiometricRecognitionService biometricRecognition, CancellationToken ct) =>
+        async Task<IResult> HandleRostroVerificacion(HttpRequest request, string? contexto, IEventPublisher eventPublisher, AnalisisDbContext db, ImageAnalysisService analysisService, BiometricRecognitionService biometricRecognition, CancellationToken ct)
         {
             if (!request.HasFormContentType)
             {
@@ -109,7 +112,7 @@ internal static class IaEndpoints
             var umbralReconocimiento = ParseDouble(form["umbralReconocimiento"]);
             if (umbralReconocimiento <= 0)
             {
-                umbralReconocimiento = 0.82;
+                umbralReconocimiento = thresholdDefault;
             }
 
             if (frame is null || frame.Length == 0)
@@ -130,21 +133,18 @@ internal static class IaEndpoints
 
             using var img = image;
 
-            BiometricRecognitionResult? recognition;
+            BiometricRecognitionResult recognition;
             if (!string.IsNullOrWhiteSpace(usuarioEsperado))
             {
                 recognition = await biometricRecognition.VerifyAgainstUserAsync(db, img, usuarioEsperado, umbralReconocimiento, ct);
             }
             else
             {
-                recognition = await biometricRecognition.RecognizeAsync(db, img, umbralReconocimiento, ct);
+                recognition = await biometricRecognition.RecognizeAsync(db, img, umbralReconocimiento, minTopMargin, ct);
             }
 
-            if (recognition is not null)
-            {
-                usuarioDetectado = recognition.IsMatch ? recognition.UserId : string.Empty;
-                confianzaRostro = recognition.Confidence;
-            }
+            usuarioDetectado = recognition.IsMatch ? (recognition.UserId ?? string.Empty) : string.Empty;
+            confianzaRostro = recognition.Confidence;
 
             var (brillo, contraste) = analysisService.Analyze(img);
             var nivelRiesgo = analysisService.GetRiskLevel(brillo, contraste);
@@ -206,8 +206,20 @@ internal static class IaEndpoints
                 {
                     usuarioEsperado,
                     usuarioDetectado,
-                    usuarioDetectadoNombre = recognition?.UserName,
+                    usuarioDetectadoNombre = recognition.UserName,
                     confianzaRostro = Math.Round(confianzaRostro, 2)
+                },
+                seguridad = new
+                {
+                    usuarioDetectado = recognition.UserId,
+                    confianza = Math.Round(recognition.Confidence, 4),
+                    segundaMejorConfianza = Math.Round(recognition.SecondBestConfidence, 4),
+                    umbralExactitud = umbralReconocimiento,
+                    margenMinimo = minTopMargin,
+                    coincide = recognition.IsMatch,
+                    esExacto = recognition.IsMatch,
+                    accesoPermitido = recognition.IsMatch,
+                    motivo = BuildSecurityReason(recognition.MatchReason)
                 },
                 sensor = new
                 {
@@ -217,8 +229,27 @@ internal static class IaEndpoints
             };
 
             return Results.Ok(payload);
-        })
+        }
+
+        app.MapPost("/api/v1/ia/analizar-camara", HandleRostroVerificacion)
         .DisableAntiforgery();
+
+        app.MapPost("/api/v1/ia/rostro/verificar", HandleRostroVerificacion)
+        .DisableAntiforgery();
+    }
+
+    private static string BuildSecurityReason(string reasonCode)
+    {
+        return reasonCode switch
+        {
+            "THRESHOLD_OK" => "Coincidencia valida",
+            "LOW_CONFIDENCE" => "Confianza insuficiente",
+            "AMBIGUOUS_MATCH" => "Coincidencia ambigua",
+            "NO_PROFILES" => "Sin perfiles enrolados",
+            "USER_NOT_ENROLLED" => "Usuario esperado no enrolado",
+            "INVALID_EXPECTED_USER" => "Usuario esperado invalido",
+            _ => "Usuario no reconocido"
+        };
     }
 
     private static double ParseDouble(string? raw)
